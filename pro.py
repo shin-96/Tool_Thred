@@ -111,6 +111,7 @@ class Workspace(ctk.CTk):
         self.voice_api_menu=ctk.CTkOptionMenu(right,values=['Edge · có sẵn'],command=lambda _:self.voice_source_changed());self.voice_api_menu.pack(fill='x',padx=12,pady=5)
         self.speech_fallback=ctk.CTkCheckBox(right,text='Dự phòng giọng đa ngôn ngữ khi dịch vụ Việt lỗi');self.speech_fallback.select();self.speech_fallback.pack(anchor='w',padx=12,pady=5)
         self.funny_only=ctk.CTkCheckBox(right,text='Chỉ chọn bình luận hài, loại quảng cáo / link sản phẩm');self.funny_only.select();self.funny_only.pack(anchor='w',padx=12,pady=5)
+        self.censor_beep=ctk.CTkCheckBox(right,text='Bíp che chửi bậy trong giọng đọc');self.censor_beep.select();self.censor_beep.pack(anchor='w',padx=12,pady=5)
         row=ctk.CTkFrame(right,fg_color='transparent');row.pack(fill='x',padx=12,pady=5)
         ctk.CTkLabel(row,text='Số bài / bình luận tối đa').pack(side='left');self.max_posts=ctk.CTkEntry(row,width=55);self.max_posts.insert(0,'8');self.max_posts.pack(side='right')
         row=ctk.CTkFrame(right,fg_color='transparent');row.pack(fill='x',padx=12,pady=5)
@@ -134,7 +135,7 @@ class Workspace(ctk.CTk):
         mv=float(self.music_vol.get());vv=float(self.voice_vol.get())
         if not 0<=mv<=100:raise ValueError('Âm lượng nhạc nền phải từ 0 đến 100%.')
         if not 0<=vv<=200:raise ValueError('Âm lượng giọng đọc phải từ 0 đến 200%.')
-        return dict(style=style,background=self.bg.get(),music=self.music.get(),music_volume=mv/100,voice_volume=vv/100,speech=bool(self.speech.get()),voice=VOICES[self.voice_menu.get()],max_posts=n,speed=speed,resolution=1080 if self.resolution.get()=='1080p' else 720,speech_fallback=bool(self.speech_fallback.get()),voice_api=api,edits=edits,funny_only=bool(self.funny_only.get()))
+        return dict(style=style,background=self.bg.get(),music=self.music.get(),music_volume=mv/100,voice_volume=vv/100,speech=bool(self.speech.get()),voice=VOICES[self.voice_menu.get()],max_posts=n,speed=speed,resolution=1080 if self.resolution.get()=='1080p' else 720,speech_fallback=bool(self.speech_fallback.get()),voice_api=api,edits=edits,funny_only=bool(self.funny_only.get()),censor_beep=bool(self.censor_beep.get()))
 
     def refresh_voice_choices(self):
         profiles=self.store.get_setting('voice_apis',{});self.api_voice_labels={'API · '+p['name']+' · '+pid[:6]:pid for pid,p in profiles.items()}
@@ -283,6 +284,7 @@ class Workspace(ctk.CTk):
         self.speech.select() if p['speech'] else self.speech.deselect();self.resolution.set(str(p['resolution'])+'p')
         self.funny_only.select() if p.get('funny_only') else self.funny_only.deselect()
         self.speech_fallback.select() if p.get('speech_fallback',True) else self.speech_fallback.deselect()
+        self.censor_beep.select() if p.get('censor_beep',True) else self.censor_beep.deselect()
         self.media_panel.items=json.loads(json.dumps(p.get('edits',[])));self.media_panel.selected=None;self.media_panel.refresh()
         self.media_panel.use_batch.select() if p.get('edits') else self.media_panel.use_batch.deselect()
 

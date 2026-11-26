@@ -35,6 +35,33 @@ _DOTTED = re.compile(r'(?:[A-Za-zÀ-ỹĐđ]\.){2,}[A-Za-zÀ-ỹĐđ]')   # s.e.
 _MASKED_TOKEN = re.compile(r'[A-Za-zÀ-ỹĐđ][A-Za-zÀ-ỹĐđ*•]*[*•][A-Za-zÀ-ỹĐđ*•]*')
 
 
+# Strong profanity the voice must never read aloud; the renderer swaps these
+# for a censor beep. Accented forms only — unaccented Vietnamese is too
+# ambiguous ("cac" is usually just "các"). Phrases come first so the regex
+# prefers them over their single-word parts.
+PROFANITY = (
+    'địt mẹ', 'đụ má', 'vãi lồn', 'vãi cặc', 'con đĩ',
+    'địt', 'đụ', 'đéo', 'đĩ', 'đị', 'cặc', 'lồn', 'buồi', 'đcm', 'đmm',
+    'fucking', 'fuck', 'shit', 'bitch',
+)
+_PROFANITY_RE = re.compile(
+    r'(?<![A-Za-zÀ-ỹĐđ])(?:' + '|'.join(re.escape(w) for w in PROFANITY) + r')(?![A-Za-zÀ-ỹĐđ])',
+    re.IGNORECASE)
+
+
+def split_profanity(text):
+    """Split text into (chunk, is_profanity) pieces covering the whole string."""
+    out, pos = [], 0
+    for m in _PROFANITY_RE.finditer(text or ''):
+        if m.start() > pos:
+            out.append((text[pos:m.start()], False))
+        out.append((m.group(0), True))
+        pos = m.end()
+    if pos < len(text or ''):
+        out.append((text[pos:], False))
+    return out
+
+
 def _unmask(text):
     text = _DOTTED.sub(lambda m: m.group(0).replace('.', ''), text)
 

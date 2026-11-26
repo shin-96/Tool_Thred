@@ -245,7 +245,50 @@ def composite(c, style, pinned=None):
     return im
 
 
-def render(data, output, style='center', background='', music='', voice='ms-MY-YasminNeural', speech=True, speed=175, max_posts=12, resolution=720, log=print, progress=lambda x:None, cancel=None, speech_fallback=True,voice_api=None,edits=None,funny_only=False,music_volume=0.12,voice_volume=1.0):
+def _beep_wav(path, seconds):
+    run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', f'sine=frequency=1000:duration={seconds:.2f}', '-ar', '44100', '-ac', '1', str(path)])
+
+
+def synthesize_censored(spoken, voice, audio, log, cancel, fallback, voice_api=None, censor_beep=True):
+    """Synthesize one scene; profane words become a 1 kHz censor beep.
+
+    The text is split at profane words, clean runs go through the normal
+    engines (Edge / API / Google fallback, cache included), each profane word
+    is replaced by a beep of similar length, and the pieces are joined back
+    into `audio`. Clean text takes the direct path, unchanged."""
+    from .speech_text import split_profanity
+    chunks = split_profanity(spoken) if censor_beep else [(spoken, False)]
+    if not any(bad for _, bad in chunks):
+        if voice_api:
+            from .voice_api import synthesize_api
+            return synthesize_api(spoken, voice_api, audio, log, cancel)
+        return synthesize(spoken, voice, audio, log, cancel, fallback)
+    log('Có từ ngữ chửi bậy: giọng đọc thay bằng tiếng bíp.')
+    workdir = Path(audio).parent / (Path(audio).stem + '_beep')
+    workdir.mkdir(exist_ok=True)
+    wavs, label = [], None
+    for n, (chunk, bad) in enumerate(chunks):
+        wav = workdir / f'p{n:02}.wav'
+        if bad:
+            _beep_wav(wav, max(0.3, min(0.7, 0.12 * len(chunk))))
+        else:
+            if not re.search(r'[A-Za-zÀ-ỹĐđ0-9]', chunk):
+                continue  # punctuation/spaces only: nothing to read, the beep keeps the beat
+            tmp = workdir / f'p{n:02}.mp3'
+            if voice_api:
+                from .voice_api import synthesize_api
+                label = synthesize_api(chunk, voice_api, tmp, log, cancel) or label
+            else:
+                label = synthesize(chunk, voice, tmp, log, cancel, fallback)
+            run(['ffmpeg', '-v', 'error', '-y', '-i', str(tmp), '-ar', '44100', '-ac', '1', str(wav)], cancel)
+        wavs.append(wav)
+    lst = workdir / 'list.txt'
+    lst.write_text(''.join(f"file '{w.as_posix()}'\n" for w in wavs), encoding='utf8')
+    run(['ffmpeg', '-v', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', str(lst), '-c:a', 'libmp3lame', '-q:a', '4', str(audio)], cancel)
+    return label
+
+
+def render(data, output, style='center', background='', music='', voice='ms-MY-YasminNeural', speech=True, speed=175, max_posts=12, resolution=720, log=print, progress=lambda x:None, cancel=None, speech_fallback=True,voice_api=None,edits=None,funny_only=False,music_volume=0.12,voice_volume=1.0,censor_beep=True):
     if not shutil.which('ffmpeg') or not shutil.which('ffprobe'):
         raise RuntimeError('Cần FFmpeg và ffprobe trong PATH. Chạy CAI_DAT.cmd.')
     if style not in {'center','top','grid'}:raise ValueError('Mẫu không hợp lệ.')
@@ -305,10 +348,7 @@ def render(data, output, style='center', background='', music='', voice='ms-MY-Y
         from .speech_text import expand_speech
         spoken=expand_speech(s['text'])  # card keeps the original text; only the voice reads the expanded form
         if speech:
-            if voice_api:
-                from .voice_api import synthesize_api
-                actual_voice=synthesize_api(spoken,voice_api,audio,log,cancel)
-            else:actual_voice=synthesize(spoken,voice,audio,log,cancel,speech_fallback)
+            actual_voice=synthesize_censored(spoken,voice,audio,log,cancel,speech_fallback,voice_api,censor_beep)
             dur=float(probe(audio)['format']['duration'])+.5
         else:dur=max(3.5,len(spoken.split())/int(speed)*60+1.0)
         if s.get('media') and s['media'][0]=='video':
