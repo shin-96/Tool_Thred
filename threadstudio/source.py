@@ -180,6 +180,25 @@ def apply_captured_videos(posts, urls):
     return posts
 
 
+def resolve_primary_video(primary, probe, captured):
+    """The post's <video> can live OUTSIDE the container the text extractor climbs,
+    so a page-level probe decides whether the main post has a video at all; the file
+    itself comes from the probe's src or from captured network files, in that order."""
+    if not primary or not probe or not probe.get('count'):
+        return primary
+    primary['has_video'] = True
+    if (primary.get('media') or {}).get('type') == 'video':
+        return primary
+    src = probe.get('src') or ''
+    if src.startswith('http') and not src.startswith('blob:'):
+        primary['media'] = {'type': 'video', 'url': src}
+        return primary
+    mp4s = [u for u in captured if '.mp4' in u] or list(captured)
+    if mp4s:
+        primary['media'] = {'type': 'video', 'url': mp4s[0]}
+    return primary
+
+
 def fetch_thread(url, log=print, limit=30, cancel=None):
     url = validate_url(url)
     limit=max(0,min(200,int(limit)))
@@ -237,10 +256,14 @@ def fetch_thread(url, log=print, limit=30, cancel=None):
             if captured:
                 log(f'Đã bắt được {len(captured)} link video thật từ trang Threads.')
             primary = next((x for x in posts if urlsplit(x['url']).path.rstrip('/') == urlsplit(url).path.rstrip('/')), None)
-            if primary and primary.get('has_video') and (primary.get('media') or {}).get('type') != 'video' and captured:
-                mp4s = [u for u in captured if '.mp4' in u] or captured
-                primary['media'] = {'type': 'video', 'url': mp4s[0]}
-            elif primary and primary.get('has_video') and (primary.get('media') or {}).get('type') != 'video':
+            probe_info = None
+            try:
+                probe_info = page.evaluate("() => { const vs = [...document.querySelectorAll('video')]; return vs.length ? {count: vs.length, poster: vs[0].getAttribute('poster') || '', src: vs[0].currentSrc || vs[0].getAttribute('src') || ''} : null; }")
+            except Exception:
+                pass
+            if primary and probe_info:
+                resolve_primary_video(primary, probe_info, captured)
+            if primary and primary.get('has_video') and (primary.get('media') or {}).get('type') != 'video':
                 log('Bài có video nhưng chưa bắt được file video thật — sẽ thử tiếp qua trang nhúng của bài.')
             if primary and primary.get('has_video') and (primary.get('media') or {}).get('type') != 'video':
                 try:  # the public embed page serves the post's own video as a plain file
@@ -271,6 +294,8 @@ def fetch_thread(url, log=print, limit=30, cancel=None):
                     ep.close()
                 except Exception:
                     pass
+            if primary and primary.get('has_video') and not primary.get('media') and probe_info and probe_info.get('poster'):
+                primary['media'] = {'type': 'image', 'url': probe_info['poster']}
             if primary:
                 posts.remove(primary)
                 if fallback:
