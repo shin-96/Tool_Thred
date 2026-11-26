@@ -38,7 +38,10 @@ EXTRACT = r"""() => {
    });
    if(imgs.length)media={type:'image',url:imgs[0].src};
   }
-  result.push({username:user,text, url:new URL(href,location.origin).href,date:a.innerText,avatar:img?.src||'',verified:!!el.querySelector('[aria-label="Verified"],svg[title="Verified"]'),stats:buttons.filter(x=>/^(Like|Comment|Repost|Share)/.test(x)),media,has_video:!!vid});
+  let scoped_src='',scoped_poster='';
+  {let sc=a;while(sc){if(sc.querySelector('video')){const links=new Set(Array.from(sc.querySelectorAll('a[href*="/post/"]')).map(x=>canonical(x.getAttribute('href'))));if(links.size>1)sc=null;break;}sc=sc.parentElement;}
+   if(sc){const sv=sc.querySelector('video');if(sv){scoped_src=sv.currentSrc||sv.getAttribute('src')||(sv.querySelector('source')?sv.querySelector('source').getAttribute('src'):'')||'';scoped_poster=sv.getAttribute('poster')||'';}}}
+  result.push({username:user,text, url:new URL(href,location.origin).href,date:a.innerText,avatar:img?.src||'',verified:!!el.querySelector('[aria-label="Verified"],svg[title="Verified"]'),stats:buttons.filter(x=>/^(Like|Comment|Repost|Share)/.test(x)),media,has_video:!!(vid||scoped_src||scoped_poster),scoped_src,scoped_poster});
   seen.add(href);
  }
  return result;
@@ -257,12 +260,11 @@ def fetch_thread(url, log=print, limit=30, cancel=None):
                 log(f'Đã bắt được {len(captured)} link video thật từ trang Threads.')
             primary = next((x for x in posts if urlsplit(x['url']).path.rstrip('/') == urlsplit(url).path.rstrip('/')), None)
             probe_info = None
-            try:
-                probe_info = page.evaluate("() => { const vs = [...document.querySelectorAll('video')]; return vs.length ? {count: vs.length, poster: vs[0].getAttribute('poster') || '', src: vs[0].currentSrc || vs[0].getAttribute('src') || ''} : null; }")
-            except Exception:
-                pass
-            if primary and probe_info:
-                resolve_primary_video(primary, probe_info, captured)
+            if primary and primary.get('scoped_src') and str(primary['scoped_src']).startswith('http') and not str(primary['scoped_src']).startswith('blob:'):
+                primary['media'] = {'type': 'video', 'url': primary['scoped_src']}
+                log('Đã thấy file video ngay trong bài.')
+            elif primary and primary.get('scoped_poster'):
+                probe_info = {'poster': primary['scoped_poster']}
             if primary and primary.get('has_video') and (primary.get('media') or {}).get('type') != 'video':
                 log('Bài có video nhưng chưa bắt được file video thật — sẽ thử tiếp qua trang nhúng của bài.')
             if primary and primary.get('has_video') and (primary.get('media') or {}).get('type') != 'video':
