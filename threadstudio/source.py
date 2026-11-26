@@ -41,6 +41,11 @@ EXTRACT = r"""() => {
   let scoped_src='',scoped_poster='';
   {let sc=a;while(sc){if(sc.querySelector('video')){const links=new Set(Array.from(sc.querySelectorAll('a[href*="/post/"]')).map(x=>canonical(x.getAttribute('href'))));if(links.size>1)sc=null;break;}sc=sc.parentElement;}
    if(sc){const sv=sc.querySelector('video');if(sv){scoped_src=sv.currentSrc||sv.getAttribute('src')||(sv.querySelector('source')?sv.querySelector('source').getAttribute('src'):'')||'';scoped_poster=sv.getAttribute('poster')||'';}}}
+  if(!media && !vid && !scoped_src){
+   let sc=a;while(sc){const links=new Set(Array.from(sc.querySelectorAll('a[href*="/post/"]')).map(x=>canonical(x.getAttribute('href'))));if(links.size>1){sc=null;break;}if(sc.querySelector('[data-pressable-container]') && sc!==a)break;sc=sc.parentElement;}
+   if(sc){const iw=im=>Math.max(im.naturalWidth||0,im.clientWidth||0);const cands=Array.from(sc.querySelectorAll('img')).filter(im=>{if(iw(im)<320)return false;const la=im.closest('a');const lh=la?la.getAttribute('href')||'':'';if(/^\/@[^/]+\/?$/.test(lh))return false;const m=lh.match(/\/post\/([\w-]+)/);return !m || m[1]===pid;}).sort((x,y)=>iw(y)-iw(x));
+    if(cands.length)media={type:'image',url:cands[0].src};}
+  }
   result.push({username:user,text, url:new URL(href,location.origin).href,date:a.innerText,avatar:img?.src||'',verified:!!el.querySelector('[aria-label="Verified"],svg[title="Verified"]'),stats:buttons.filter(x=>/^(Like|Comment|Repost|Share)/.test(x)),media,has_video:!!(vid||scoped_src||scoped_poster),scoped_src,scoped_poster});
   seen.add(href);
  }
@@ -259,6 +264,12 @@ def fetch_thread(url, log=print, limit=30, cancel=None):
             if captured:
                 log(f'Đã bắt được {len(captured)} link video thật từ trang Threads.')
             primary = next((x for x in posts if urlsplit(x['url']).path.rstrip('/') == urlsplit(url).path.rstrip('/')), None)
+            for post in posts:
+                ssrc = str(post.get('scoped_src') or '')
+                if ssrc.startswith('http') and not ssrc.startswith('blob:'):
+                    post['media'] = {'type': 'video', 'url': ssrc}
+                elif post.get('has_video') and not post.get('media') and post.get('scoped_poster'):
+                    post['media'] = {'type': 'image', 'url': post['scoped_poster']}
             probe_info = None
             if primary and primary.get('scoped_src') and str(primary['scoped_src']).startswith('http') and not str(primary['scoped_src']).startswith('blob:'):
                 primary['media'] = {'type': 'video', 'url': primary['scoped_src']}
