@@ -100,6 +100,18 @@ Tool lưu publish_id ngay sau khởi tạo, trước khi gửi dữ liệu. Nế
 
 Tài liệu chính thức: [Direct Post](https://developers.tiktok.com/docs/en/content-posting-api-reference-direct-post), [Upload vào hộp thư](https://developers.tiktok.com/docs/en/content-posting-api-reference-upload-video), [Trạng thái](https://developers.tiktok.com/docs/en/content-posting-api-reference-get-video-status).
 
+## Tự động: Google Doc → Video → TikTok
+
+Tab **Tự động** chạy cả dây chuyền mà không cần bấm tay từng bước:
+
+1. Chuẩn bị một Google Doc **chỉ chứa link Threads, mỗi link một dòng** (không ghi nội dung khác). Mở Doc, bấm **Chia sẻ** và chọn **"Bất kỳ ai có đường liên kết — Người xem"** — app đọc Doc qua bản xuất văn bản công khai, không cần đăng nhập Google trên máy.
+2. Dán link Doc vào tab Tự động. Đặt hai mốc: **Quét Doc mỗi X phút** (mặc định 15) và **Gửi TikTok mỗi X phút** (mặc định 60 — tức 1 video/giờ). Chọn tài khoản TikTok API và hình thức gửi (hộp thư hoặc đăng trực tiếp; quyền xem chỉ dùng khi đăng trực tiếp, mặc định SELF_ONLY).
+3. Chỉnh sẵn mẫu ở tab **Tạo hàng loạt** (kiểu thẻ, giọng đọc — gồm giọng API như ElevenLabs, nhạc nền, độ phân giải) rồi bấm **Bắt đầu tự động**. Mẫu được chụp lại tại thời điểm bấm; đổi mẫu giữa chừng không ảnh hưởng lô đang chạy — muốn đổi thì Dừng rồi Bắt đầu lại.
+4. Từ đó: link mới xuất hiện trong Doc sẽ tự vào hàng đợi và tự dựng; video dựng xong nằm chờ và được gửi TikTok từng cái một theo chu kỳ. Link đã quét không bao giờ bị thêm lại, video đã gửi không bao giờ bị gửi trùng (kiểm tra cả trong lịch sử gửi). Đóng rồi mở lại app, chế độ tự động tự chạy tiếp nếu lần trước đang bật.
+5. Bấm **Dừng tự động** để ngừng quét và ngừng gửi; các video đã dựng vẫn ở trong Thư viện. Nút **Quét Doc ngay** để quét tức thì thay vì chờ mốc.
+
+Lưu ý: gửi TikTok tự động đi qua Content Posting API nên cần token đã lưu ở tab Cài đặt. Chưa có tài khoản API thì app vẫn dựng video để sẵn trong Thư viện và báo lỗi ở phần gửi.
+
 ## Dữ liệu và sao lưu
 
 - `data/studio.db`: hàng đợi, thư viện, preset, lịch sử và token được bảo vệ bằng Windows.

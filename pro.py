@@ -18,6 +18,7 @@ from threadstudio.render import ROOT
 from threadstudio.source import validate_url
 from threadstudio.store import Store
 from threadstudio.production import ProductionQueue, video_metadata
+from threadstudio.autopilot import AutoPilot
 from threadstudio.browser_publish import BrowserPublisher
 from threadstudio.tiktok import TikTokAPI
 from threadstudio.secrets import protect, unprotect
@@ -43,15 +44,15 @@ class Workspace(ctk.CTk):
         super().__init__();ctk.set_appearance_mode('dark');ctk.set_default_color_theme('green')
         self.title('Threads Studio Pro | Production Workspace')
         self.geometry(f'{min(1420,self.winfo_screenwidth()-40)}x{min(920,self.winfo_screenheight()-70)}+10+10');self.minsize(1040,620)
-        self.store=Store();self.events=queue.Queue();self.queue=ProductionQueue(self.store,self.store.get_setting('workers',2));self.browser=BrowserPublisher(self.store,lambda m:self.events.put(('message',m)))
+        self.store=Store();self.events=queue.Queue();self.queue=ProductionQueue(self.store,self.store.get_setting('workers',2));self.browser=BrowserPublisher(self.store,lambda m:self.events.put(('message',m)));self.autopilot=AutoPilot(self.store,self.queue,self.get_api,lambda m:self.events.put(('message',m)))
         self.selected_videos=set();self.closing=False;self.api_busy=False;self.creator_info=None;self.creator_account=None;self.api_lock=threading.Lock();self.signatures={}
         style=ttk.Style(self);style.theme_use('clam');style.configure('Treeview',background='#192422',foreground='#dfebe6',fieldbackground='#192422',rowheight=32,borderwidth=0,font=('Segoe UI',10));style.configure('Treeview.Heading',background='#22322e',foreground='#eaf4ef',font=('Segoe UI',10,'bold'),padding=8);style.map('Treeview',background=[('selected','#246955')])
         header=ctk.CTkFrame(self,fg_color='transparent');header.pack(fill='x',padx=22,pady=(15,8))
         ctk.CTkLabel(header,text='THREADS STUDIO  PRO',font=ctk.CTkFont(size=25,weight='bold')).pack(side='left')
         self.stats=ctk.CTkLabel(header,text='Xưởng video của bạn',text_color='#93bdac');self.stats.pack(side='right')
         self.tabs=ctk.CTkTabview(self);self.tabs.pack(fill='both',expand=True,padx=18,pady=(0,12))
-        for name in ['Tạo hàng loạt','Hàng đợi','Thư viện video','Chèn meme / media','API giọng đọc','TikTok','Cài đặt']:self.tabs.add(name)
-        self.make_create();self.make_queue();self.make_library();self.make_tiktok();self.make_settings()
+        for name in ['Tạo hàng loạt','Hàng đợi','Thư viện video','Chèn meme / media','API giọng đọc','TikTok','Tự động','Cài đặt']:self.tabs.add(name)
+        self.make_create();self.make_queue();self.make_library();self.make_tiktok();self.make_settings();self.make_autopilot();self.autopilot.resume()
         self.voice_panel=VoicePanel(self,self.tabs.tab('API giọng đọc'));self.media_panel=EditingPanel(self,self.tabs.tab('Chèn meme / media'))
         self.status=ctk.CTkLabel(self,text='Sẵn sàng · Không tự đăng video khi tạo xong.',anchor='w',text_color='#92ac9f');self.status.pack(fill='x',padx=24,pady=(0,8))
         self.after(200,self.poll);self.protocol('WM_DELETE_WINDOW',self.close)
@@ -522,6 +523,42 @@ class Workspace(ctk.CTk):
         if messagebox.askokcancel('Cho phép gửi lại','Chỉ tiếp tục sau khi bạn đã kiểm tra TikTok và xác nhận các video này CHƯA đăng / CHƯA chờ xử lý. Điều này mở khóa gửi lại, không xóa bản đang có trên TikTok.\n\n'+'\n'.join(u['title'] for u in records)):
             for u in records:self.store.update_upload(u['id'],'cancelled','Người dùng đã kiểm tra và cho phép gửi lại.')
 
+    def make_autopilot(self):
+        tab=self.tabs.tab('Tự động')
+        self.heading(tab,'Tự động: Doc → Video → TikTok','App quét Google Doc theo mốc cố định: link Threads mới tự vào hàng đợi dựng video theo mẫu đang đặt ở tab Tạo hàng loạt lúc bấm Bắt đầu (kiểu thẻ, giọng đọc, nhạc…), video dựng xong tự gửi TikTok theo chu kỳ. Doc chỉ nên chứa link Threads, mỗi link một dòng, và phải mở chia sẻ "Bất kỳ ai có đường liên kết — Người xem" để app đọc được.')
+        saved=self.store.get_setting('autopilot',{})
+        ctk.CTkLabel(tab,text='Link Google Doc chứa link Threads',anchor='w').pack(fill='x',padx=12,pady=(6,0))
+        self.auto_doc=ctk.CTkEntry(tab);self.auto_doc.insert(0,saved.get('doc','https://docs.google.com/document/d/1CmED4UaQNoaeSQ1vs1b9bZdIuOhBLoIDzpxig-FHcVM/edit'));self.auto_doc.pack(fill='x',padx=12,pady=4)
+        row=ctk.CTkFrame(tab,fg_color='transparent');row.pack(fill='x',padx=12,pady=3)
+        ctk.CTkLabel(row,text='Quét Doc mỗi (phút)').pack(side='left');self.auto_poll=ctk.CTkEntry(row,width=60);self.auto_poll.insert(0,str(saved.get('poll_minutes',15)));self.auto_poll.pack(side='left',padx=8)
+        ctk.CTkLabel(row,text='Gửi TikTok mỗi (phút)').pack(side='left',padx=(18,0));self.auto_upload_every=ctk.CTkEntry(row,width=60);self.auto_upload_every.insert(0,str(saved.get('upload_minutes',60)));self.auto_upload_every.pack(side='left',padx=8)
+        row=ctk.CTkFrame(tab,fg_color='transparent');row.pack(fill='x',padx=12,pady=3)
+        ctk.CTkLabel(row,text='Tài khoản TikTok API').pack(side='left');self.auto_account=ctk.CTkOptionMenu(row,values=list(self.store.get_setting('tiktok_accounts',{})) or ['Chưa có tài khoản']);self.auto_account.pack(side='left',padx=8)
+        if saved.get('account'):
+            try:self.auto_account.set(saved['account'])
+            except Exception:pass
+        self.auto_mode=ctk.CTkOptionMenu(row,values=['Gửi vào hộp thư TikTok','Đăng trực tiếp']);self.auto_mode.set('Đăng trực tiếp' if saved.get('mode')=='direct' else 'Gửi vào hộp thư TikTok');self.auto_mode.pack(side='left',padx=8)
+        ctk.CTkLabel(row,text='Quyền xem (khi đăng trực tiếp)').pack(side='left',padx=(18,0));self.auto_privacy=ctk.CTkEntry(row,width=130);self.auto_privacy.insert(0,saved.get('privacy','SELF_ONLY'));self.auto_privacy.pack(side='left',padx=8)
+        actions=ctk.CTkFrame(tab,fg_color='transparent');actions.pack(fill='x',padx=8,pady=8)
+        self.button(actions,'Bắt đầu tự động',self.start_autopilot,width=170);self.button(actions,'Dừng tự động',self.stop_autopilot,width=130);self.button(actions,'Quét Doc ngay',lambda:self.autopilot.scan_now(),width=130)
+        self.auto_status=ctk.CTkLabel(tab,text='',anchor='w',justify='left',wraplength=1150);self.auto_status.pack(fill='x',padx=12,pady=8)
+
+    def start_autopilot(self):
+        from threadstudio.doclinks import doc_id
+        try:
+            doc_id(self.auto_doc.get());poll=int(self.auto_poll.get());every=int(self.auto_upload_every.get())
+            if poll<1 or every<1:raise ValueError('Số phút phải từ 1 trở lên.')
+            options=self.options()
+        except Exception as e:messagebox.showerror('Chưa sẵn sàng',str(e));return
+        account=self.auto_account.get()
+        if account not in self.store.get_setting('tiktok_accounts',{}):
+            if not messagebox.askokcancel('Chưa có tài khoản API','Chưa chọn tài khoản TikTok API hợp lệ (thêm token tại tab Cài đặt). Vẫn bật tự động? App sẽ dựng video để sẵn trong Thư viện; phần gửi TikTok sẽ báo lỗi cho tới khi có tài khoản.'):return
+        cfg={'doc':self.auto_doc.get().strip(),'poll_minutes':poll,'upload_minutes':every,'account':account,'mode':'direct' if self.auto_mode.get()=='Đăng trực tiếp' else 'inbox','privacy':self.auto_privacy.get().strip() or 'SELF_ONLY','options':options,'output_dir':self.output_dir.get()}
+        self.autopilot.start(cfg);self.notify('Đã bật chế độ tự động: quét Doc → dựng video → gửi TikTok theo chu kỳ.')
+
+    def stop_autopilot(self):
+        self.autopilot.stop();self.notify('Đã tắt chế độ tự động.')
+
     def make_settings(self):
         tab=self.tabs.tab('Cài đặt');self.heading(tab,'Tài nguyên & tài khoản','Dữ liệu, lịch sử và hồ sơ riêng nằm trong thư mục data cạnh công cụ. Giữ nguyên thư mục khi chuyển máy.')
         body=ctk.CTkScrollableFrame(tab);body.pack(fill='both',expand=True,padx=12,pady=5)
@@ -584,6 +621,9 @@ class Workspace(ctk.CTk):
         self.sync_tree('videos',self.library_tree,[(v['id'],[v['title'],f"{int(v['duration']//60)}:{int(v['duration']%60):02}",f"{v['width']} × {v['height']}",recent.get(v['id'],'Chưa gửi')]) for v in videos if q in v['title'].lower()])
         self.selected_videos&={v['id'] for v in videos};self.update_selection()
         self.sync_tree('uploads',self.upload_tree,[(u['id'],[u['title'],u['account'],u['mode'],STATUS.get(u['status'],u['status']),u['message']]) for u in uploads])
+        if hasattr(self,'auto_status'):
+            cfg=self.store.get_setting('autopilot',{});st=self.store.get_setting('autopilot_state',{})
+            self.auto_status.configure(text=('ĐANG BẬT' if cfg.get('enabled') else 'ĐANG TẮT')+f" · Đã thấy {len(st.get('seen',[]))} link trong Doc · {len(st.get('jobs',[]))} video tự động · "+st.get('last_message',''))
 
     def poll(self):
         if self.closing:return
