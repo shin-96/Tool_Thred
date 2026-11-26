@@ -53,7 +53,8 @@ class ProductionQueue:
     def _work(self,job,event):
         jid=job['id'];log=lambda text:self.store.log(jid,text)
         try:
-            options=json.loads(job['options']);data=json.loads(job['data']) if job['data'] else None
+            options=json.loads(job['options']);options.pop('autopilot',None)  # marker from an older build; render() has no such parameter
+            data=json.loads(job['data']) if job['data'] else None
             # A complete output from an interrupted session can be indexed without re-rendering.
             if Path(job['output']).is_file():
                 meta=video_metadata(job['output']);self.store.add_video(job['output'],job['title'],meta,jid)

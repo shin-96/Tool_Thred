@@ -111,7 +111,7 @@ class AutoPilot:
         fresh = [u for u in links if u not in active and attempts.get(u, 0) < 3]
         for url in fresh:
             code = url.rstrip('/').split('/')[-1]
-            jid = self.store.add_job('auto_' + code, url, dict(cfg['options'], autopilot=True), None, cfg.get('output_dir'))
+            jid = self.store.add_job('auto_' + code, url, dict(cfg['options']), None, cfg.get('output_dir'))
             st.setdefault('jobs', []).append(jid)
             attempts[url] = attempts.get(url, 0) + 1
         st['seen'] = sorted(seen | set(links))
