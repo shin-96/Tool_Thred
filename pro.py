@@ -102,6 +102,7 @@ class Workspace(ctk.CTk):
         self.voice_menu=ctk.CTkOptionMenu(right,values=list(VOICES));self.voice_menu.pack(fill='x',padx=12,pady=5)
         self.voice_api_menu=ctk.CTkOptionMenu(right,values=['Edge · có sẵn'],command=lambda _:self.voice_source_changed());self.voice_api_menu.pack(fill='x',padx=12,pady=5)
         self.speech_fallback=ctk.CTkCheckBox(right,text='Dự phòng giọng đa ngôn ngữ khi dịch vụ Việt lỗi');self.speech_fallback.select();self.speech_fallback.pack(anchor='w',padx=12,pady=5)
+        self.funny_only=ctk.CTkCheckBox(right,text='Chỉ chọn bình luận hài, loại quảng cáo / link sản phẩm');self.funny_only.select();self.funny_only.pack(anchor='w',padx=12,pady=5)
         row=ctk.CTkFrame(right,fg_color='transparent');row.pack(fill='x',padx=12,pady=5)
         ctk.CTkLabel(row,text='Số bài / bình luận tối đa').pack(side='left');self.max_posts=ctk.CTkEntry(row,width=55);self.max_posts.insert(0,'8');self.max_posts.pack(side='right')
         row=ctk.CTkFrame(right,fg_color='transparent');row.pack(fill='x',padx=12,pady=5)
@@ -122,7 +123,7 @@ class Workspace(ctk.CTk):
         if shutil.disk_usage(output).free<512*1024**2:raise ValueError('Ổ đĩa còn dưới 512 MB. Chọn ổ còn trống trước khi dựng.')
         api=self.selected_voice_api(self.voice_api_menu.get())
         edits=json.loads(json.dumps(self.media_panel.items)) if self.media_panel.use_batch.get() else []
-        return dict(style=style,background=self.bg.get(),music=self.music.get(),speech=bool(self.speech.get()),voice=VOICES[self.voice_menu.get()],max_posts=n,speed=speed,resolution=1080 if self.resolution.get()=='1080p' else 720,speech_fallback=bool(self.speech_fallback.get()),voice_api=api,edits=edits)
+        return dict(style=style,background=self.bg.get(),music=self.music.get(),speech=bool(self.speech.get()),voice=VOICES[self.voice_menu.get()],max_posts=n,speed=speed,resolution=1080 if self.resolution.get()=='1080p' else 720,speech_fallback=bool(self.speech_fallback.get()),voice_api=api,edits=edits,funny_only=bool(self.funny_only.get()))
 
     def refresh_voice_choices(self):
         profiles=self.store.get_setting('voice_apis',{});self.api_voice_labels={'API · '+p['name']+' · '+pid[:6]:pid for pid,p in profiles.items()}
@@ -201,6 +202,7 @@ class Workspace(ctk.CTk):
         self.style_menu.set(next(k for k,v in STYLES.items() if v==p['style']));self.voice_menu.set(next(k for k,v in VOICES.items() if v==p['voice']))
         for entry,key in [(self.bg,'background'),(self.music,'music'),(self.max_posts,'max_posts'),(self.speed,'speed')]:entry.delete(0,'end');entry.insert(0,str(p[key]))
         self.speech.select() if p['speech'] else self.speech.deselect();self.resolution.set(str(p['resolution'])+'p')
+        self.funny_only.select() if p.get('funny_only') else self.funny_only.deselect()
         self.speech_fallback.select() if p.get('speech_fallback',True) else self.speech_fallback.deselect()
         self.media_panel.items=json.loads(json.dumps(p.get('edits',[])));self.media_panel.selected=None;self.media_panel.refresh()
         self.media_panel.use_batch.select() if p.get('edits') else self.media_panel.use_batch.deselect()

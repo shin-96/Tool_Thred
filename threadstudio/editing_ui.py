@@ -1,6 +1,7 @@
 import hashlib
 import json
 import shutil
+import time
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox
@@ -41,14 +42,16 @@ class EditingPanel:
         self.path = ctk.CTkEntry(form, placeholder_text='Tệp media'); self.path.pack(fill='x', padx=12, pady=5)
         self.mode = ctk.CTkOptionMenu(form, values=['Phủ lên video', 'Chèn đoạn rồi tiếp tục']); self.mode.pack(fill='x', padx=12, pady=5)
         self.fields = {}
-        for key, label, value in [('scene', 'Cảnh (0 = toàn video)', '0'), ('start', 'Bắt đầu / điểm chèn (giây)', '0'),
-                                  ('duration', 'Thời lượng (giây)', '3'), ('offset', 'Bắt đầu trong nguồn (giây)', '0'),
-                                  ('x', 'X (px)', '40'), ('y', 'Y (px)', '850'), ('width', 'Chiều rộng (px)', '280'),
-                                  ('opacity', 'Độ hiện (0–1)', '1'), ('volume', 'Âm lượng (0–2)', '0.7'),
-                                  ('rotation', 'Xoay (độ, -360–360)', '0'), ('fade_in', 'Fade in (giây)', '0'), ('fade_out', 'Fade out (giây)', '0')]:
+        field_defs = [('scene', 'Cảnh (0 = toàn video)', '0'), ('start', 'Bắt đầu / điểm chèn (s)', '0'),
+                      ('duration', 'Thời lượng (s)', '3'), ('offset', 'Bắt đầu trong nguồn (s)', '0'),
+                      ('x', 'X (px)', '40'), ('y', 'Y (px)', '850'), ('width', 'Chiều rộng (px)', '280'),
+                      ('opacity', 'Độ hiện (0–1)', '1'), ('volume', 'Âm lượng (0–2)', '0.7'),
+                      ('rotation', 'Xoay (độ)', '0'), ('fade_in', 'Fade in (s)', '0'), ('fade_out', 'Fade out (s)', '0')]
+        for pair in (field_defs[i:i + 2] for i in range(0, len(field_defs), 2)):
             row = ctk.CTkFrame(form, fg_color='transparent'); row.pack(fill='x', padx=12, pady=3)
-            ctk.CTkLabel(row, text=label, width=270, anchor='w').pack(side='left')
-            e = ctk.CTkEntry(row); e.pack(side='left', fill='x', expand=True); e.insert(0, value); self.fields[key] = e
+            for key, label, value in pair:
+                ctk.CTkLabel(row, text=label, width=150, anchor='w').pack(side='left')
+                e = ctk.CTkEntry(row, width=105); e.pack(side='left', padx=(0, 14)); e.insert(0, value); self.fields[key] = e
         srow = ctk.CTkFrame(form, fg_color='transparent'); srow.pack(fill='x', padx=12, pady=3)
         ctk.CTkLabel(srow, text='Thanh trượt: Độ hiện / Âm lượng', width=270, anchor='w').pack(side='left')
         self.opacity_slider = ctk.CTkSlider(srow, from_=0, to=1, number_of_steps=100, width=110,
@@ -83,6 +86,7 @@ class EditingPanel:
         self.preview = ctk.CTkLabel(right, text='Xem trước ở thời điểm bên dưới', height=self.preview_height); self.preview.pack(fill='x', padx=10, pady=8)
         self.preview.bind('<Button-1>', self.pv_down); self.preview.bind('<B1-Motion>', self.pv_move)
         self.preview.bind('<ButtonRelease-1>', lambda e: self.show_preview()); self.preview.bind('<MouseWheel>', self.pv_wheel)
+        ctk.CTkLabel(right, text='Bấm ▶ Phát / Dừng (ở thanh timeline) để xem video chạy; kéo vạch đỏ trên timeline tới đúng đoạn cần chèn, rồi ghi keyframe.', wraplength=300, justify='left', text_color='#9eb8ac').pack(fill='x', padx=10)
         self.seek = ctk.CTkEntry(right, placeholder_text='Thời điểm xem trước'); self.seek.insert(0, '0'); self.seek.pack(fill='x', padx=10, pady=4)
         ctk.CTkButton(right, text='Cập nhật xem trước', command=self.show_preview).pack(fill='x', padx=10, pady=4)
         ctk.CTkButton(right, text='XUẤT BẢN CHỈNH SỬA', command=self.export).pack(fill='x', padx=10, pady=8)
@@ -194,16 +198,16 @@ class EditingPanel:
     def toggle_play(self):
         self._playing = not self._playing
         if self._playing:
-            self._tick()
+            self._play_clock = time.monotonic(); self._play_from = self.playhead; self._tick()
 
     def _tick(self):
         if not self._playing:
             return
-        t = self.playhead + 0.12
+        t = self._play_from + (time.monotonic() - self._play_clock)
         if t >= self._total():
             self._playing = False; return
         self._set_playhead(t)
-        self.timeline.after(150, self._tick)
+        self.timeline.after(120, self._tick)
 
     # ---------- preview drag / resize ----------
     def _pv_to_video(self, event):
@@ -334,6 +338,8 @@ class EditingPanel:
         else:
             self.chroma_on.deselect()
         self._show_keyframes(e); self.draw_timeline()
+        if self.source:
+            self.show_preview()
 
     def apply(self):
         try:
@@ -360,6 +366,8 @@ class EditingPanel:
             else:
                 self.items[self.selected] = item
             self.refresh(); self.app.notify('Đã lưu lớp media. Có thể xem trước hoặc xuất bản mới.')
+            if self.source:
+                self.show_preview()
         except Exception as e:
             messagebox.showerror('Kiểm tra media', str(e), parent=self.app)
 
@@ -432,6 +440,13 @@ class EditingPanel:
                     d.rectangle([st['x'] + st['width'] - 14, st['y'] + h - 14, st['x'] + st['width'] + 2, st['y'] + h + 2], fill=(255, 209, 102))
                 im.thumbnail((240, self.preview_height)); self._pv_size = im.size
                 self.app.events.put(('media_preview', (im, total)))
+                # Update the label directly: the app's event poll runs only 1x/sec, which made playback look frozen.
+                def apply_img(im=im):
+                    self._pv_img = ctk.CTkImage(im, size=im.size); self.preview.configure(image=self._pv_img, text='')
+                try:
+                    self.preview.after(0, apply_img)
+                except Exception:
+                    pass  # the app's event poll still delivers this frame, just slower
             finally:
                 self.preview_busy = False
         self.app.background(task)

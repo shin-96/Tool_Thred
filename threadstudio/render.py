@@ -202,12 +202,13 @@ def composite(c, style, pinned=None):
     return im
 
 
-def render(data, output, style='center', background='', music='', voice='ms-MY-YasminNeural', speech=True, speed=175, max_posts=12, resolution=720, log=print, progress=lambda x:None, cancel=None, speech_fallback=True,voice_api=None,edits=None):
+def render(data, output, style='center', background='', music='', voice='ms-MY-YasminNeural', speech=True, speed=175, max_posts=12, resolution=720, log=print, progress=lambda x:None, cancel=None, speech_fallback=True,voice_api=None,edits=None,funny_only=False):
     if not shutil.which('ffmpeg') or not shutil.which('ffprobe'):
         raise RuntimeError('Cần FFmpeg và ffprobe trong PATH. Chạy CAI_DAT.cmd.')
     if style not in {'center','top','grid'}:raise ValueError('Mẫu không hợp lệ.')
     if not 60 <= int(speed) <= 400: raise ValueError('Tốc độ đọc phải từ 60 đến 400 từ/phút.')
-    posts=data.get('posts',[])[:int(max_posts)]
+    from .comment_filter import select_posts
+    posts=select_posts(data.get('posts',[]),int(max_posts),funny_only,log=log)
     if not posts: raise ValueError('Dự án chưa có bài viết.')
     output=Path(output).resolve();output.parent.mkdir(parents=True,exist_ok=True)
     if output.exists(): raise ValueError('Tên video đã tồn tại. Hãy chọn tên mới.')
@@ -241,13 +242,15 @@ def render(data, output, style='center', background='', music='', voice='ms-MY-Y
         png=s['png']
         audio=work/f'voice_{i:03}.mp3'
         actual_voice=None
+        from .speech_text import expand_speech
+        spoken=expand_speech(s['text'])  # card keeps the original text; only the voice reads the expanded form
         if speech:
             if voice_api:
                 from .voice_api import synthesize_api
-                actual_voice=synthesize_api(s['text'],voice_api,audio,log,cancel)
-            else:actual_voice=synthesize(s['text'],voice,audio,log,cancel,speech_fallback)
+                actual_voice=synthesize_api(spoken,voice_api,audio,log,cancel)
+            else:actual_voice=synthesize(spoken,voice,audio,log,cancel,speech_fallback)
             dur=float(probe(audio)['format']['duration'])+.5
-        else:dur=max(3.5,len(s['text'].split())/int(speed)*60+1.0)
+        else:dur=max(3.5,len(spoken.split())/int(speed)*60+1.0)
         out=work/f'segment_{i:03}.mp4';cmd=['ffmpeg','-hide_banner','-loglevel','error','-y']
         if style=='grid':
             cmd+=['-loop','1','-framerate','30','-i',png]
@@ -258,7 +261,7 @@ def render(data, output, style='center', background='', music='', voice='ms-MY-Y
         if speech:cmd+=['-i',audio]
         else:cmd+=['-f','lavfi','-i','anullsrc=r=44100:cl=stereo']
         cmd+=['-filter_complex_threads','2','-filter_complex',vf+f';[{aidx}:a]apad,aresample=44100[a]','-map','[v]','-map','[a]','-t',f'{dur:.3f}','-r','30','-c:v','libx264','-threads','4','-preset','veryfast','-crf','20','-c:a','aac','-ar','44100','-ac','2','-movflags','+faststart',out]
-        run(cmd,cancel);parts.append(out);timeline.append({'start':round(elapsed,3),'duration':round(dur,3),'author':s['author'],'text':s['text'],'voice':actual_voice});elapsed+=dur;progress((i+1)/(len(segments)+1))
+        run(cmd,cancel);parts.append(out);timeline.append({'start':round(elapsed,3),'duration':round(dur,3),'author':s['author'],'text':s['text'],'spoken':spoken,'voice':actual_voice});elapsed+=dur;progress((i+1)/(len(segments)+1))
     concat=work/'concat.txt';concat.write_text('\n'.join("file '"+p.name+"'" for p in parts),encoding='utf8')
     joined=work/'joined.mp4'
     run(['ffmpeg','-v','error','-y','-f','concat','-safe','0','-i',concat,'-c','copy','-movflags','+faststart',joined],cancel)

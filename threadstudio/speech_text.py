@@ -1,0 +1,47 @@
+"""Expand Vietnamese chat abbreviations so TTS reads naturally.
+
+Only the SPOKEN text is rewritten; the on-screen card keeps the original.
+The dictionary is deliberately conservative: ambiguous codes (hn, bn, đk…)
+are left alone rather than guessed wrong. Add entries freely — keys are
+matched as whole words, case-insensitively.
+"""
+import re
+
+ABBR = {
+    'ko': 'không', 'kh': 'không', 'hok': 'không', 'hong': 'không', 'hông': 'không',
+    'đc': 'được', 'dc': 'được', 'j': 'gì', 's': 'sao', 'r': 'rồi', 'rùi': 'rồi', 'òi': 'rồi',
+    'mn': 'mọi người', 'mng': 'mọi người', 'ae': 'anh em', 'ce': 'chị em', 'ac': 'anh chị',
+    'ny': 'người yêu', 'gđ': 'gia đình', 'đt': 'điện thoại', 'fb': 'facebook', 'ig': 'instagram',
+    'yt': 'youtube', 'ad': 'admin', 'ib': 'nhắn tin', 'inb': 'nhắn tin',
+    'trc': 'trước', 'hqua': 'hôm qua', 'hnay': 'hôm nay', 'mik': 'mình', 'mjk': 'mình',
+    'vs': 'với', 'v': 'vậy', 'z': 'vậy', 'lun': 'luôn', 'thui': 'thôi', 't': 'tao', 'm': 'mày',
+    'cx': 'cũng', 'nx': 'nữa', 'ntn': 'như thế nào', 'tn': 'tin nhắn', 'kb': 'kết bạn',
+    'rep': 'trả lời', 'cmt': 'bình luận', 'bl': 'bình luận', 'fl': 'theo dõi',
+    'đkí': 'đăng ký', 'dki': 'đăng ký', 'oce': 'ok', 'okie': 'ok', 'oke': 'ok',
+}
+EMOJI = re.compile(r'[\U0001F000-\U0001FAFF\u2600-\u27ff\ufe0f\u200d]')
+
+
+def _number_rules(text):
+    text = re.sub(r'(\d+(?:[.,]\d+)?)\s*[kK]\b', r'\1 nghìn', text)          # 500k -> 500 nghìn
+    text = re.sub(r'(\d+(?:[.,]\d+)?)\s*tr(?:iệu)?\b', r'\1 triệu', text)    # 4tr -> 4 triệu
+    text = re.sub(r'(\d+(?:[.,]\d+)?)\s*củ\b', r'\1 triệu', text)            # 4 củ -> 4 triệu
+    text = re.sub(r'(\d)\s*m\b', r'\1 mét', text)                            # 5m -> 5 mét
+    text = re.sub(r'(\d)m(\d)', r'\1 mét \2', text)                          # 1m8 -> 1 mét 8
+    text = text.replace('%', ' phần trăm')
+    return text
+
+
+def expand_speech(text):
+    text = EMOJI.sub('', text or '')
+    for junk in ('=))', ':))', ':)', '^^', '~~', '...'):
+        text = text.replace(junk, '.' if junk == '...' else ' ')
+    text = _number_rules(text)
+
+    def repl(m):  # never expand a letter glued to a digit (model names, sizes…)
+        if (m.start() and text[m.start() - 1].isdigit()) or (m.end() < len(text) and text[m.end()].isdigit()):
+            return m.group(0)
+        return ABBR.get(m.group(0).lower(), m.group(0))
+
+    text = re.sub(r'[A-Za-zÀ-ỹĐđ]+', repl, text)
+    return re.sub(r'\s+', ' ', text).strip()
