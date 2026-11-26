@@ -90,6 +90,7 @@ class Workspace(ctk.CTk):
         self.button(actions,'Nhập TXT / CSV',self.import_links,width=140);self.button(actions,'Nhập dự án',self.import_projects,width=130)
         self.picked_data={};self.fetched_data={}
         self.button(actions,'Xem & chọn bình luận',self.pick_comments,width=175)
+        self.button(actions,'Đăng nhập Threads',self.login_threads,width=150)
         ctk.CTkButton(left,text='Mở trình sửa & xem trước',command=self.open_editor).pack(anchor='w',padx=15,pady=5)
         self.heading(left,'Quy trình','Thêm vào hàng đợi → Bắt đầu chạy → Xem video trong Thư viện → Chọn bản muốn đưa lên TikTok.')
         self.info=ctk.CTkLabel(left,text='Nguồn mới chỉ vào hàng đợi, chưa chạy và chưa đăng.',text_color='#8fc2a8',wraplength=570,justify='left');self.info.pack(fill='x',padx=15,pady=8)
@@ -150,6 +151,14 @@ class Workspace(ctk.CTk):
                 if data is not None:opts['funny_only']=False  # hand-picked comments are used exactly as chosen
                 self.store.add_job(title+'_'+style,source,opts,data,self.output_dir.get());count+=1
         self.store.setting('output_dir',self.output_dir.get());self.info.configure(text=f'Đã thêm {count} video vào hàng đợi. Bấm Bắt đầu chạy khi sẵn sàng.');self.tabs.set('Hàng đợi');self.refresh()
+
+    def login_threads(self):
+        self.info.configure(text='Đang mở Edge bằng hồ sơ riêng của app… Đăng nhập Threads trong cửa sổ đó rồi đóng cửa sổ lại là xong, app sẽ nhớ đăng nhập cho các lần lấy bài sau.')
+        def task():
+            from threadstudio.source import open_login_browser
+            open_login_browser(lambda m:self.events.put(('message',m)))
+            self.events.put(('message','Đã đóng trình duyệt đăng nhập. Giờ bấm "Xem & chọn bình luận" hoặc thêm link vào hàng đợi như bình thường.'))
+        self.background(task)
 
     def pick_comments(self):
         try:
