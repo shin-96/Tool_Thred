@@ -237,11 +237,20 @@ def render(data, output, style='center', background='', music='', voice='ms-MY-Y
             if style=='grid' and pi>0 and 140+pinned.height+40+c.height>H-70:
                 raise ValueError('Thẻ quá dài. Hãy chia nội dung trong dự án thành đoạn ngắn hơn.')
             png=work/f'card_{len(segments):03}.png';frame.save(png)
-            media=None
+            media=None; media_box=None
             if ci==0:
                 m=post.get('media') or {}
                 if m.get('path') and Path(m['path']).is_file():media=(m.get('type','image'),m['path'])
-            segments.append({'text':' '.join(lines),'png':png,'author':post['username'],'media':media})
+            if media and style=='center':
+                # Attached media is its own block UNDER the card (like the original post),
+                # not a background: card moves to the top, media plays in the box below it.
+                top=90; box_y=top+c.height+30; box_h=H-box_y-60
+                if box_h>=240:
+                    frame=Image.new('RGBA',(W,H))
+                    shadow=Image.new('RGBA',(W,H));shadow.paste((0,0,0,110),(50,top+7,670,top+c.height+12));shadow=shadow.filter(ImageFilter.GaussianBlur(13));frame.alpha_composite(shadow)
+                    frame.alpha_composite(c,(52,top));frame.save(png)
+                    media_box=(60,box_y,600,box_h)
+            segments.append({'text':' '.join(lines),'png':png,'author':post['username'],'media':media,'media_box':media_box})
     log(f'Đang dựng {len(segments)} cảnh từ {len(posts)} bài/bình luận…')
     parts=[]; timeline=[]; elapsed=0
     for i,s in enumerate(segments):
@@ -263,6 +272,12 @@ def render(data, output, style='center', background='', music='', voice='ms-MY-Y
         if style=='grid':
             cmd+=['-loop','1','-framerate','30','-i',png]
             vf=f'[0:v]scale={resolution}:{int(resolution*16/9)//2*2},format=yuv420p[v]';aidx=1
+        elif s.get('media_box'):
+            bx,by,bw,bh=s['media_box']
+            cmd+=['-stream_loop','-1','-ss',str(elapsed%float(probe(background)['format']['duration'])),'-i',background,'-loop','1','-framerate','30','-i',png]
+            if s['media'][0]=='video':cmd+=['-stream_loop','-1','-i',s['media'][1]]
+            else:cmd+=['-loop','1','-framerate','30','-i',s['media'][1]]
+            vf=f'[0:v]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,setsar=1[bg];[2:v]scale={bw}:{bh}:force_original_aspect_ratio=decrease,pad={bw}:{bh}:(ow-iw)/2:(oh-ih)/2:color=black@0,format=rgba[m];[bg][m]overlay={bx}:{by}:shortest=1[tmp];[tmp][1:v]overlay=0:0:shortest=1,scale={resolution}:{int(resolution*16/9)//2*2},format=yuv420p[v]';aidx=3
         elif s.get('media') and s['media'][0]=='video':
             cmd+=['-stream_loop','-1','-i',s['media'][1],'-loop','1','-framerate','30','-i',png]
             vf=f'[0:v]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,setsar=1[bg];[bg][1:v]overlay=0:0:shortest=1,scale={resolution}:{int(resolution*16/9)//2*2},format=yuv420p[v]';aidx=2

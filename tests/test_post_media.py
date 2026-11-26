@@ -78,7 +78,7 @@ class CapturedVideoTests(unittest.TestCase):
 
 
 class RenderMediaTests(unittest.TestCase):
-    def test_media_becomes_scene_background(self):
+    def test_media_plays_in_box_under_card(self):
         with tempfile.TemporaryDirectory() as td:
             root = Path(td)
             red = root / 'red.jpg'
@@ -90,11 +90,15 @@ class RenderMediaTests(unittest.TestCase):
             out = render(data, str(root / 'out.mp4'), speech=False, log=lambda m: None)
             frame = subprocess.run(['ffmpeg', '-v', 'error', '-ss', '1', '-i', out, '-frames:v', '1',
                                     '-f', 'rawvideo', '-pix_fmt', 'rgb24', '-'], capture_output=True).stdout
-            i = (1274 * 720 + 6) * 3
-            r, g, b = frame[i], frame[i + 1], frame[i + 2]
+            def px(x, y):
+                i = (y * 720 + x) * 3
+                return frame[i], frame[i + 1], frame[i + 2]
+            r, g, b = px(360, 1000)  # centre of the media box under the card: the red image
             self.assertGreater(r, 150)
             self.assertLess(g, 90)
             self.assertLess(b, 90)
+            r, g, b = px(6, 1274)  # frame corner stays gameplay, NOT the media
+            self.assertFalse(r > 150 and g < 90 and b < 90)
 
 
 if __name__ == '__main__':
