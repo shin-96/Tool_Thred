@@ -116,6 +116,8 @@ class AutoPilot:
         return fresh
 
     def _upload_due(self, cfg, st):
+        if not cfg.get('post_to_tiktok', True):
+            return  # render-only mode: videos wait in the library for manual posting
         account = cfg.get('account', '')
         jobs = set(st.get('jobs', []))
         pending = [v for v in self.store.videos() if v.get('job_id') in jobs]

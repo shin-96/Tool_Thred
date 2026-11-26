@@ -539,6 +539,8 @@ class Workspace(ctk.CTk):
             except Exception:pass
         self.auto_mode=ctk.CTkOptionMenu(row,values=['Gửi vào hộp thư TikTok','Đăng trực tiếp']);self.auto_mode.set('Đăng trực tiếp' if saved.get('mode')=='direct' else 'Gửi vào hộp thư TikTok');self.auto_mode.pack(side='left',padx=8)
         ctk.CTkLabel(row,text='Quyền xem (khi đăng trực tiếp)').pack(side='left',padx=(18,0));self.auto_privacy=ctk.CTkEntry(row,width=130);self.auto_privacy.insert(0,saved.get('privacy','SELF_ONLY'));self.auto_privacy.pack(side='left',padx=8)
+        self.auto_post=ctk.CTkCheckBox(tab,text='Tự gửi TikTok theo chu kỳ (bỏ chọn = chỉ dựng video vào Thư viện, tôi tự đăng)');self.auto_post.pack(anchor='w',padx=12,pady=4)
+        if saved.get('post_to_tiktok',True):self.auto_post.select()
         actions=ctk.CTkFrame(tab,fg_color='transparent');actions.pack(fill='x',padx=8,pady=8)
         self.button(actions,'Bắt đầu tự động',self.start_autopilot,width=170);self.button(actions,'Dừng tự động',self.stop_autopilot,width=130);self.button(actions,'Quét Doc ngay',lambda:self.autopilot.scan_now(),width=130)
         self.auto_status=ctk.CTkLabel(tab,text='',anchor='w',justify='left',wraplength=1150);self.auto_status.pack(fill='x',padx=12,pady=8)
@@ -550,10 +552,10 @@ class Workspace(ctk.CTk):
             if poll<1 or every<1:raise ValueError('Số phút phải từ 1 trở lên.')
             options=self.options()
         except Exception as e:messagebox.showerror('Chưa sẵn sàng',str(e));return
-        account=self.auto_account.get()
-        if account not in self.store.get_setting('tiktok_accounts',{}):
-            if not messagebox.askokcancel('Chưa có tài khoản API','Chưa chọn tài khoản TikTok API hợp lệ (thêm token tại tab Cài đặt). Vẫn bật tự động? App sẽ dựng video để sẵn trong Thư viện; phần gửi TikTok sẽ báo lỗi cho tới khi có tài khoản.'):return
-        cfg={'doc':self.auto_doc.get().strip(),'poll_minutes':poll,'upload_minutes':every,'account':account,'mode':'direct' if self.auto_mode.get()=='Đăng trực tiếp' else 'inbox','privacy':self.auto_privacy.get().strip() or 'SELF_ONLY','options':options,'output_dir':self.output_dir.get()}
+        account=self.auto_account.get();post=bool(self.auto_post.get())
+        if post and account not in self.store.get_setting('tiktok_accounts',{}):
+            if not messagebox.askokcancel('Chưa có tài khoản API','Đã bật Tự gửi TikTok nhưng chưa chọn tài khoản API hợp lệ (thêm token tại tab Cài đặt). Vẫn bật? App sẽ dựng video để sẵn trong Thư viện; phần gửi TikTok sẽ báo lỗi cho tới khi có tài khoản.'):return
+        cfg={'doc':self.auto_doc.get().strip(),'poll_minutes':poll,'upload_minutes':every,'account':account,'post_to_tiktok':post,'mode':'direct' if self.auto_mode.get()=='Đăng trực tiếp' else 'inbox','privacy':self.auto_privacy.get().strip() or 'SELF_ONLY','options':options,'output_dir':self.output_dir.get()}
         self.autopilot.start(cfg);self.notify('Đã bật chế độ tự động: quét Doc → dựng video → gửi TikTok theo chu kỳ.')
 
     def stop_autopilot(self):
