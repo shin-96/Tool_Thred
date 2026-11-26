@@ -102,13 +102,20 @@ class AutoPilot:
         self._save_state(st)
         links = extract_links(fetch_doc_text(cfg['doc']))
         seen = set(st.get('seen', []))
-        existing = {j['source'] for j in self.store.jobs()}
-        fresh = [u for u in links if u not in seen and u not in existing]
+        attempts = st.get('attempts', {})
+        # A link counts as handled only while one of its jobs is queued, running or
+        # finished. A link whose jobs all failed/cancelled is queued again — that
+        # is the point of automation — but at most 3 rounds per link, so a post
+        # that can never be fetched does not spam the queue forever.
+        active = {j['source'] for j in self.store.jobs() if j['status'] in ('queued', 'fetching', 'rendering', 'ready')}
+        fresh = [u for u in links if u not in active and attempts.get(u, 0) < 3]
         for url in fresh:
             code = url.rstrip('/').split('/')[-1]
             jid = self.store.add_job('auto_' + code, url, dict(cfg['options'], autopilot=True), None, cfg.get('output_dir'))
             st.setdefault('jobs', []).append(jid)
+            attempts[url] = attempts.get(url, 0) + 1
         st['seen'] = sorted(seen | set(links))
+        st['attempts'] = attempts
         st['last_scan'] = time.time()
         self._save_state(st)
         if fresh:
