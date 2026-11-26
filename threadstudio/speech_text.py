@@ -21,6 +21,29 @@ ABBR = {
 }
 EMOJI = re.compile(r'[\U0001F000-\U0001FAFF\u2600-\u27ff\ufe0f\u200d]')
 
+# Self-censored words the author masked with * or •. Only high-confidence
+# entries live here; anything else just loses its mask characters below
+# (reading "d" is still better than reading "d sao"). The on-screen card
+# always keeps the author's original masked text.
+MASKED = {
+    'ph*': 'phò',
+    'ch*t': 'chết',
+    'prost*tution': 'mại dâm',
+    's*x': 'sex',
+}
+_DOTTED = re.compile(r'(?:[A-Za-zÀ-ỹĐđ]\.){2,}[A-Za-zÀ-ỹĐđ]')   # s.e.x -> sex
+_MASKED_TOKEN = re.compile(r'[A-Za-zÀ-ỹĐđ][A-Za-zÀ-ỹĐđ*•]*[*•][A-Za-zÀ-ỹĐđ*•]*')
+
+
+def _unmask(text):
+    text = _DOTTED.sub(lambda m: m.group(0).replace('.', ''), text)
+
+    def repl(m):
+        token = m.group(0)
+        return MASKED.get(token.lower(), token.replace('*', '').replace('•', ''))
+
+    return _MASKED_TOKEN.sub(repl, text)
+
 
 def _number_rules(text):
     text = re.sub(r'(\d+(?:[.,]\d+)?)\s*[kK]\b', r'\1 nghìn', text)          # 500k -> 500 nghìn
@@ -37,6 +60,7 @@ def expand_speech(text):
     for junk in ('=))', ':))', ':)', '^^', '~~', '...'):
         text = text.replace(junk, '.' if junk == '...' else ' ')
     text = _number_rules(text)
+    text = _unmask(text)
 
     def repl(m):  # never expand a letter glued to a digit (model names, sizes…)
         if (m.start() and text[m.start() - 1].isdigit()) or (m.end() < len(text) and text[m.end()].isdigit()):
