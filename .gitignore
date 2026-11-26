@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+data/
+outputs/
+inspection/
+build/
+dist/
+assets/avatars/
+assets/speech_cache/
