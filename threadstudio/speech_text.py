@@ -28,6 +28,14 @@ ABBR = {
     'hcm': 'Hồ Chí Minh', 'sg': 'Sài Gòn', 'k': 'không', 'e': 'em',
     'bít': 'biết', 'vch': 'vãi chưởng', 'vk': 'vợ', 'ox': 'ông xã',
     'ms': 'mới', 'kkk': 'ha ha',
+    'a': 'anh', 'b': 'bạn', 'bn': 'bạn', 'ng': 'người', 'ngta': 'người ta',
+    'str': 'story', 'tk': 'tài khoản', 'zl': 'zalo', 'ytb': 'youtube',
+    'gg': 'google', 'sp': 'sản phẩm', 'cfs': 'confession', 'rv': 'review',
+    'nyc': 'người yêu cũ', 'hs': 'học sinh', 'sv': 'sinh viên',
+    'ph': 'phụ huynh', 'đh': 'đại học', 'gi': 'gì', 'thoy': 'thôi',
+    'hoy': 'thôi', 'nhen': 'nhé', 'uhm': 'ừ', 'cũg': 'cũng',
+    'hmai': 'ngày mai', 'ngmai': 'ngày mai', 'zui': 'vui', 'juan': 'chuẩn',
+    'sịn': 'xịn', 'phake': 'hàng giả', 'auth': 'hàng chính hãng',
 }
 EMOJI = re.compile(r'[\U0001F000-\U0001FAFF\u2600-\u27ff\ufe0f\u200d]')
 
@@ -50,9 +58,9 @@ _MASKED_TOKEN = re.compile(r'[A-Za-zÀ-ỹĐđ][A-Za-zÀ-ỹĐđ*•]*[*•][A-Z
 # ambiguous ("cac" is usually just "các"). Phrases come first so the regex
 # prefers them over their single-word parts.
 PROFANITY = (
-    'địt mẹ', 'đụ má', 'vãi lồn', 'vãi cặc', 'con đĩ',
+    'địt mẹ', 'đụ má', 'vãi lồn', 'vãi cặc', 'con đĩ', 'đù má',
     'địt', 'đụ', 'đéo', 'đĩ', 'đị', 'cặc', 'lồn', 'buồi', 'đcm', 'đmm', 'đm',
-    'fucking', 'fuck', 'shit', 'bitch',
+    'fucking', 'fuck', 'fuk', 'fck', 'shit', 'bitch', 'dcm', 'cl',
 )
 _PROFANITY_RE = re.compile(
     r'(?<![A-Za-zÀ-ỹĐđ])(?:' + '|'.join(re.escape(w) for w in PROFANITY) + r')(?![A-Za-zÀ-ỹĐđ])',
@@ -82,7 +90,12 @@ def _unmask(text):
     return _MASKED_TOKEN.sub(repl, text)
 
 
+_CAP = {'1': 'một', '2': 'hai', '3': 'ba'}
+
+
 def _number_rules(text):
+    text = re.sub(r'\bin4\b', 'thông tin', text, flags=re.IGNORECASE)        # xin in4 -> xin thông tin
+    text = re.sub(r'\bc([123])\b', lambda m: 'cấp ' + _CAP[m.group(1)], text, flags=re.IGNORECASE)  # hs c3 -> cấp ba
     text = re.sub(r'(\d+(?:[.,]\d+)?)\s*[kK]\b', r'\1 nghìn', text)          # 500k -> 500 nghìn
     text = re.sub(r'(\d+(?:[.,]\d+)?)\s*tr(?:iệu)?\b', r'\1 triệu', text)    # 4tr -> 4 triệu
     text = re.sub(r'(\d+(?:[.,]\d+)?)\s*củ\b', r'\1 triệu', text)            # 4 củ -> 4 triệu
@@ -92,17 +105,38 @@ def _number_rules(text):
     return text
 
 
+_BT_KNOW_PREV = {'có', 'ai', 'sao', 'chả', 'chẳng', 'đâu', 'làm'}
+_BT_KNOW_NEXT = {'không', 'chưa', 'gì', 'đâu', 'ai', 'là', 'nói', 'làm', 'được', 'thế', 'bao', 'mấy'}
+
+
+def _neighbor(text, m, after):
+    part = text[m.end():] if after else text[:m.start()]
+    words = re.findall(r'[A-Za-zÀ-ỹĐđ]+', part)
+    if not words:
+        return ''
+    return (words[0] if after else words[-1]).lower()
+
+
 def expand_speech(text):
     text = EMOJI.sub('', text or '')
     for junk in ('=))', ':))', ':)', ':v', '^^', '~~', '...'):
         text = text.replace(junk, '.' if junk == '...' else ' ')
+    text = text.replace('kkkk', 'ha ha').replace('kkk', 'ha ha')
+    # Elongated spellings (lunnn, ơiii, đẹppp): collapse 3+ repeated letters so
+    # the dictionary below sees the base word.
+    text = re.sub(r'([A-Za-zÀ-ỹĐđ])\1{2,}', r'\1', text)
     text = _number_rules(text)
     text = _unmask(text)
 
     def repl(m):  # never expand a letter glued to a digit (model names, sizes…)
         if (m.start() and text[m.start() - 1].isdigit()) or (m.end() < len(text) and text[m.end()].isdigit()):
             return m.group(0)
-        return ABBR.get(m.group(0).lower(), m.group(0))
+        low = m.group(0).lower()
+        if low == 'bt':  # bt = biết or bình thường, decided by the neighbouring word
+            if _neighbor(text, m, False) in _BT_KNOW_PREV or _neighbor(text, m, True) in _BT_KNOW_NEXT:
+                return 'biết'
+            return 'bình thường'
+        return ABBR.get(low, m.group(0))
 
     text = re.sub(r'[A-Za-zÀ-ỹĐđ]+', repl, text)
     return re.sub(r'\s+', ' ', text).strip()
