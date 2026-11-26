@@ -153,7 +153,7 @@ class Workspace(ctk.CTk):
         self.store.setting('output_dir',self.output_dir.get());self.info.configure(text=f'Đã thêm {count} video vào hàng đợi. Bấm Bắt đầu chạy khi sẵn sàng.');self.tabs.set('Hàng đợi');self.refresh()
 
     def login_threads(self):
-        self.info.configure(text='Đang mở Chrome bằng hồ sơ riêng của app… Đăng nhập Threads trong cửa sổ đó rồi đóng cửa sổ lại là xong, app sẽ nhớ đăng nhập cho các lần lấy bài sau.')
+        self.info.configure(text='Đang mở trình duyệt bằng hồ sơ riêng của app… Đăng nhập Threads trong cửa sổ đó rồi đóng cửa sổ lại là xong, app sẽ nhớ đăng nhập cho các lần lấy bài sau.')
         def task():
             from threadstudio.source import open_login_browser
             open_login_browser(lambda m:self.events.put(('message',m)))
@@ -167,7 +167,7 @@ class Workspace(ctk.CTk):
         except Exception as e:messagebox.showerror('Kiểm tra nguồn',str(e),parent=self);return
         url=next((u for u in links if u not in self.picked_data),links[0])
         if url in self.fetched_data:self.open_comment_picker(url,self.fetched_data[url]);return
-        self.info.configure(text='Đang lấy bình luận của bài… (mở Threads bằng Chrome, khoảng 20–40 giây)')
+        self.info.configure(text='Đang lấy bình luận của bài… (mở Threads bằng trình duyệt của app, khoảng 20–40 giây)')
         def task():
             from threadstudio.source import fetch_thread
             data=fetch_thread(url,lambda m:None,limit=60)

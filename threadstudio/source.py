@@ -1,6 +1,8 @@
 import hashlib
 import json
 import re
+import subprocess
+import sys
 import threading
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -98,17 +100,33 @@ def attach_media(data, log=print):
         log(f"Đã tải {media['type']} đính kèm của @{post['username']}.")
     return data
 
-def _launch_context(p, headless=True):
-    """Persistent browser profile (data/browser_profile): Threads cookies survive between
-    runs, so a one-time manual login stops Threads from walling the app's browser."""
-    profile = ROOT / 'data' / 'browser_profile'; profile.mkdir(parents=True, exist_ok=True)
-    kw = {'viewport': {'width': 1280, 'height': 1000}, 'locale': 'en-US'}
-    for channel in ('chrome', 'msedge'):  # prefer the user's Google Chrome, fall back to Edge
+def _launch_context(p, headless=True, profile=None, viewport=None, log=print):
+    """Persistent browser profile: Threads/TikTok cookies survive between runs, so a
+    one-time manual login sticks. Tries Google Chrome, then Edge, then Playwright's
+    bundled Chromium — installing that Chromium automatically (one-time download)
+    when no system browser can be used, so the app never dies on a missing browser."""
+    profile = Path(profile) if profile else ROOT / 'data' / 'browser_profile'
+    profile.mkdir(parents=True, exist_ok=True)
+    kw = {'viewport': viewport or {'width': 1280, 'height': 1000}, 'locale': 'en-US'}
+    for channel in ('msedge', 'chrome'):  # Edge first (built into Windows), then Google Chrome
         try:
             return p.chromium.launch_persistent_context(str(profile), channel=channel, headless=headless, **kw)
         except Exception:
             continue
-    return p.chromium.launch_persistent_context(str(profile), headless=headless, chromium_sandbox=False, **kw)
+    try:
+        return p.chromium.launch_persistent_context(str(profile), headless=headless, chromium_sandbox=False, **kw)
+    except Exception:
+        pass
+    log('Đang tải trình duyệt tích hợp cho app (chỉ tải một lần, khoảng 150 MB)…')
+    try:
+        for pkg in ('chromium-headless-shell', 'chromium'):  # shell first (headless fetch), full build for visible windows
+            subprocess.run([sys.executable, '-m', 'playwright', 'install', pkg], capture_output=True, timeout=900)
+    except Exception:
+        pass
+    try:
+        return p.chromium.launch_persistent_context(str(profile), headless=headless, chromium_sandbox=False, **kw)
+    except Exception as e:
+        raise RuntimeError('Không mở được trình duyệt nào (Chrome, Edge đều lỗi và trình duyệt tích hợp cũng không chạy được). Chi tiết: ' + str(e)[:200])
 
 
 def open_login_browser(log=print):
@@ -169,14 +187,14 @@ def fetch_thread(url, log=print, limit=30, cancel=None):
                     primary['text']=fallback['text']
                     if not primary.get('media') and fallback.get('media'):primary['media']=fallback['media']
             elif fallback:primary=fallback
-            else:raise RuntimeError('Chưa lấy được nội dung bài này. Threads có thể đang bắt đăng nhập trong trình duyệt của app — bấm nút "Đăng nhập Threads" ở tab Tạo hàng loạt, đăng nhập một lần trong cửa sổ Chrome hiện ra, rồi thử lại.')
+            else:raise RuntimeError('Chưa lấy được nội dung bài này. Threads có thể đang bắt đăng nhập trong trình duyệt của app — bấm nút "Đăng nhập Threads" ở tab Tạo hàng loạt, đăng nhập một lần trong cửa sổ trình duyệt hiện ra, rồi thử lại.')
             data = {'url': url, 'posts': [primary] + posts[:limit], 'notice': 'Chỉ lấy bình luận Threads hiển thị công khai; có thể ít hơn số đếm trên bài.'}
             attach_media(data, log)
             log(f"Đã lấy bài gốc và {len(data['posts']) - 1} bình luận công khai.")
             return data
         except Cancelled:raise
         except Exception:
-            if not fallback:raise RuntimeError('Chưa lấy được nội dung bài này. Threads có thể đang bắt đăng nhập trong trình duyệt của app — bấm nút "Đăng nhập Threads" ở tab Tạo hàng loạt, đăng nhập một lần trong cửa sổ Chrome hiện ra, rồi thử lại.')
+            if not fallback:raise RuntimeError('Chưa lấy được nội dung bài này. Threads có thể đang bắt đăng nhập trong trình duyệt của app — bấm nút "Đăng nhập Threads" ở tab Tạo hàng loạt, đăng nhập một lần trong cửa sổ trình duyệt hiện ra, rồi thử lại.')
             log('Đã lấy bài gốc từ nội dung công khai dự phòng; chưa tải được bình luận. Có thể thử lại sau.')
             data={'url':url,'posts':[fallback],'notice':'Nội dung công khai dự phòng; chưa tải được bình luận.'}
             attach_media(data, log)
