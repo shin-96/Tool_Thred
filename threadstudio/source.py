@@ -103,10 +103,12 @@ def _launch_context(p, headless=True):
     runs, so a one-time manual login stops Threads from walling the app's browser."""
     profile = ROOT / 'data' / 'browser_profile'; profile.mkdir(parents=True, exist_ok=True)
     kw = {'viewport': {'width': 1280, 'height': 1000}, 'locale': 'en-US'}
-    try:
-        return p.chromium.launch_persistent_context(str(profile), channel='msedge', headless=headless, **kw)
-    except Exception:
-        return p.chromium.launch_persistent_context(str(profile), headless=headless, chromium_sandbox=False, **kw)
+    for channel in ('chrome', 'msedge'):  # prefer the user's Google Chrome, fall back to Edge
+        try:
+            return p.chromium.launch_persistent_context(str(profile), channel=channel, headless=headless, **kw)
+        except Exception:
+            continue
+    return p.chromium.launch_persistent_context(str(profile), headless=headless, chromium_sandbox=False, **kw)
 
 
 def open_login_browser(log=print):
@@ -116,7 +118,7 @@ def open_login_browser(log=print):
         try:
             page = ctx.pages[0] if ctx.pages else ctx.new_page()
             page.goto('https://www.threads.com/', wait_until='domcontentloaded', timeout=60000)
-            log('Đã mở Edge bằng hồ sơ riêng của app. Hãy đăng nhập Threads trong cửa sổ đó, xong thì đóng cửa sổ Edge lại.')
+            log('Đã mở trình duyệt bằng hồ sơ riêng của app. Hãy đăng nhập Threads trong cửa sổ đó, xong thì đóng cửa sổ trình duyệt lại.')
             while ctx.pages:
                 page.wait_for_timeout(600)
         except Exception:
@@ -167,14 +169,14 @@ def fetch_thread(url, log=print, limit=30, cancel=None):
                     primary['text']=fallback['text']
                     if not primary.get('media') and fallback.get('media'):primary['media']=fallback['media']
             elif fallback:primary=fallback
-            else:raise RuntimeError('Chưa lấy được nội dung bài này. Threads có thể đang bắt đăng nhập trong trình duyệt của app — bấm nút "Đăng nhập Threads" ở tab Tạo hàng loạt, đăng nhập một lần trong cửa sổ Edge hiện ra, rồi thử lại.')
+            else:raise RuntimeError('Chưa lấy được nội dung bài này. Threads có thể đang bắt đăng nhập trong trình duyệt của app — bấm nút "Đăng nhập Threads" ở tab Tạo hàng loạt, đăng nhập một lần trong cửa sổ Chrome hiện ra, rồi thử lại.')
             data = {'url': url, 'posts': [primary] + posts[:limit], 'notice': 'Chỉ lấy bình luận Threads hiển thị công khai; có thể ít hơn số đếm trên bài.'}
             attach_media(data, log)
             log(f"Đã lấy bài gốc và {len(data['posts']) - 1} bình luận công khai.")
             return data
         except Cancelled:raise
         except Exception:
-            if not fallback:raise RuntimeError('Chưa lấy được nội dung bài này. Threads có thể đang bắt đăng nhập trong trình duyệt của app — bấm nút "Đăng nhập Threads" ở tab Tạo hàng loạt, đăng nhập một lần trong cửa sổ Edge hiện ra, rồi thử lại.')
+            if not fallback:raise RuntimeError('Chưa lấy được nội dung bài này. Threads có thể đang bắt đăng nhập trong trình duyệt của app — bấm nút "Đăng nhập Threads" ở tab Tạo hàng loạt, đăng nhập một lần trong cửa sổ Chrome hiện ra, rồi thử lại.')
             log('Đã lấy bài gốc từ nội dung công khai dự phòng; chưa tải được bình luận. Có thể thử lại sau.')
             data={'url':url,'posts':[fallback],'notice':'Nội dung công khai dự phòng; chưa tải được bình luận.'}
             attach_media(data, log)

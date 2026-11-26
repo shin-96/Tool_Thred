@@ -42,7 +42,12 @@ class BrowserPublisher:
         try:
             with sync_playwright() as p:
                 profile=ROOT/'data'/'browser_profiles'/self.profile
-                context=p.chromium.launch_persistent_context(str(profile),channel='msedge',headless=False,chromium_sandbox=True,viewport={'width':1280,'height':850})
+                context=None
+                for channel in ('chrome','msedge'):  # prefer Google Chrome, fall back to Edge
+                    try:
+                        context=p.chromium.launch_persistent_context(str(profile),channel=channel,headless=False,chromium_sandbox=True,viewport={'width':1280,'height':850});break
+                    except Exception:continue
+                if context is None:context=p.chromium.launch_persistent_context(str(profile),headless=False,chromium_sandbox=False,viewport={'width':1280,'height':850})
                 page=context.pages[0] if context.pages else context.new_page()
                 page.goto('https://www.tiktok.com/tiktokstudio/upload',wait_until='domcontentloaded',timeout=60000)
                 self.notify('TikTok Studio đã mở. Đăng nhập bằng cửa sổ trình duyệt, rồi chọn video trong Thư viện.')
