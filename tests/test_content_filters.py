@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from threadstudio.comment_filter import is_ad, parse_likes, select_posts
+from threadstudio.comment_filter import auto_pick, is_ad, parse_likes, select_posts
 from threadstudio.speech_text import expand_speech
 
 
@@ -36,6 +36,15 @@ class AdFilterTests(unittest.TestCase):
         self.assertEqual([p['username'] for p in picked], ['op', 'funny', 'mid'])
         plain = select_posts(posts, 3, funny_only=False)
         self.assertEqual([p['username'] for p in plain], ['op', 'ad', 'funny'])
+
+
+    def test_auto_pick_matches_auto_mode_and_drops_seeding(self):
+        posts = [{'username': 'main', 'text': 'Bài gốc', 'stats': ['Like 10']},
+                 {'username': 'ad', 'text': 'áo khoác 195k quảng cáo', 'stats': ['Like 999']},
+                 {'username': 'fun', 'text': 'cười xỉu luôn 😂', 'stats': ['Like 5']},
+                 {'username': 'mid', 'text': 'cũng được đó mọi người ơi', 'stats': ['Like 1']}]
+        picked = auto_pick(posts, 3)
+        self.assertEqual(picked, {id(posts[2]), id(posts[3])})
 
 
 class SpeechTextTests(unittest.TestCase):

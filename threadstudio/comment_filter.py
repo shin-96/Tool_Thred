@@ -16,12 +16,14 @@ AD_WORDS = [
     'việc nhẹ lương cao', 'thu nhập thụ động', 'sản phẩm chính hãng', 'chính hãng 100%',
     'bảo hành', 'tư vấn miễn phí', 'đăng ký ngay', 'ưu đãi hôm nay', 'số lượng có hạn',
     'nhanh tay', 'chốt đơn', 'lên đơn', 'sỉ lẻ', 'giá sỉ', 'cam kết hoàn tiền',
+    'quảng cáo', 'ké bài', 'bán pizza', 'nhà em bán', 'em bán',
 ]
 AD_PATTERNS = [
     re.compile(r'https?://|www\.|\b[\w-]+\.(com|vn|net|shop|store|io|me|link|xyz)\b', re.I),
     re.compile(r'\b0\d{9}\b'),                       # phone numbers
     re.compile(r'\b(shp\.ee|bit\.ly|shorten|rutgon)\b', re.I),
     re.compile(r'\b\d{2,3}[kK]\s*(?:đ|vnd|đồng)?\s*(?:/|món|cái|sp|sản phẩm)'),  # price tags like 199k/sp
+    re.compile(r'\b\d{2,3}k[a-zà-ỹ]{2,}', re.I),     # glued price slang like 135kaaaa
 ]
 LAUGH_EMOJI = '😂🤣😆😹'
 LAUGH_WORDS = ['haha', 'hihi', 'hehe', 'cười', '=))', ':))', 'kkk', 'khà khà', 'cười ẻ', 'cười xỉu', 'xỉu']
@@ -59,6 +61,11 @@ def funny_score(post):
         score -= 10                      # shouting caps
     score += min(10, text.count('!') * 2)
     return score
+
+
+def auto_pick(posts, max_posts):
+    """Replies the auto mode would choose (ads dropped, funniest first), as a set of id()."""
+    return {id(p) for p in select_posts(posts, max_posts, funny_only=True)[1:]}
 
 
 def select_posts(posts, max_posts, funny_only=False, log=None):

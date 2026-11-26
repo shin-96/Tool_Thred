@@ -59,7 +59,10 @@ def fetch_thread(url, log=print, limit=30, cancel=None):
     if cancel and cancel.is_set():raise Cancelled('Đã hủy lấy nội dung.')
     log('Đang mở Threads và lấy bài viết, bình luận công khai…')
     with sync_playwright() as p:
-        browser = p.chromium.launch(channel='msedge', headless=True,chromium_sandbox=True)
+        try:
+            browser = p.chromium.launch(channel='msedge', headless=True,chromium_sandbox=True)
+        except Exception:
+            browser = p.chromium.launch(headless=True,chromium_sandbox=False)  # fallback when Edge is absent
         try:
             page = browser.new_page(viewport={'width': 1280, 'height': 1000}, locale='en-US')
             page.goto(url, wait_until='domcontentloaded', timeout=60000)

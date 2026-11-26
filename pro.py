@@ -88,6 +88,8 @@ class Workspace(ctk.CTk):
         self.sources.insert('1.0','https://www.threads.com/@nguyenhoang9292/post/DgJ0tcYj8Rp')
         actions=ctk.CTkFrame(left,fg_color='transparent');actions.pack(fill='x',padx=10)
         self.button(actions,'Nhập TXT / CSV',self.import_links,width=140);self.button(actions,'Nhập dự án',self.import_projects,width=130)
+        self.picked_data={};self.fetched_data={}
+        self.button(actions,'Xem & chọn bình luận',self.pick_comments,width=175)
         ctk.CTkButton(left,text='Mở trình sửa & xem trước',command=self.open_editor).pack(anchor='w',padx=15,pady=5)
         self.heading(left,'Quy trình','Thêm vào hàng đợi → Bắt đầu chạy → Xem video trong Thư viện → Chọn bản muốn đưa lên TikTok.')
         self.info=ctk.CTkLabel(left,text='Nguồn mới chỉ vào hàng đợi, chưa chạy và chưa đăng.',text_color='#8fc2a8',wraplength=570,justify='left');self.info.pack(fill='x',padx=15,pady=8)
@@ -144,8 +146,67 @@ class Workspace(ctk.CTk):
         count=0
         for title,source,data in items:
             for style in styles:
-                opts=dict(options,style=style);self.store.add_job(title+'_'+style,source,opts,data,self.output_dir.get());count+=1
+                opts=dict(options,style=style)
+                if data is not None:opts['funny_only']=False  # hand-picked comments are used exactly as chosen
+                self.store.add_job(title+'_'+style,source,opts,data,self.output_dir.get());count+=1
         self.store.setting('output_dir',self.output_dir.get());self.info.configure(text=f'Đã thêm {count} video vào hàng đợi. Bấm Bắt đầu chạy khi sẵn sàng.');self.tabs.set('Hàng đợi');self.refresh()
+
+    def pick_comments(self):
+        try:
+            links=[validate_url(x.strip()) for x in self.sources.get('1.0','end').splitlines() if x.strip()]
+            if not links:raise ValueError('Nhập ít nhất một link Threads.')
+        except Exception as e:messagebox.showerror('Kiểm tra nguồn',str(e),parent=self);return
+        url=next((u for u in links if u not in self.picked_data),links[0])
+        if url in self.fetched_data:self.open_comment_picker(url,self.fetched_data[url]);return
+        self.info.configure(text='Đang lấy bình luận của bài… (mở Threads bằng Edge, khoảng 20–40 giây)')
+        def task():
+            from threadstudio.source import fetch_thread
+            data=fetch_thread(url,lambda m:None,limit=60)
+            self.fetched_data[url]=data;self.events.put(('comments',(url,data)))
+        self.background(task)
+
+    def open_comment_picker(self,url,data):
+        from threadstudio.comment_filter import auto_pick,is_ad,parse_likes
+        posts=data.get('posts',[]);replies=posts[1:]
+        win=ctk.CTkToplevel(self);win.title('Chọn bình luận vào video');win.geometry('780x580');win.transient(self)
+        ctk.CTkLabel(win,text='Bài gốc · @'+(posts[0]['username'] if posts else '?'),font=ctk.CTkFont(size=15,weight='bold'),anchor='w').pack(fill='x',padx=14,pady=(12,2))
+        ctk.CTkLabel(win,text=(posts[0]['text'][:220] if posts else ''),wraplength=740,justify='left',anchor='w',text_color='#9eb8ac').pack(fill='x',padx=14)
+        bar=ctk.CTkFrame(win,fg_color='transparent');bar.pack(fill='x',padx=10,pady=6)
+        counter=ctk.CTkLabel(bar,text='');counter.pack(side='right',padx=8)
+        frame=ctk.CTkScrollableFrame(win);frame.pack(fill='both',expand=True,padx=10,pady=4)
+        try:n=int(self.max_posts.get())
+        except Exception:n=8
+        preselect=auto_pick(posts,n) if self.funny_only.get() else {id(p) for p in replies}
+        variables=[]
+        def recount():counter.configure(text=f'Đã chọn {sum(1 for v in variables if v.get())} / {len(replies)} bình luận')
+        for p in replies:
+            var=tk.BooleanVar(value=id(p) in preselect);variables.append(var)
+            row=ctk.CTkFrame(frame,fg_color='transparent');row.pack(fill='x',pady=2)
+            ctk.CTkCheckBox(row,text='',variable=var,width=24,command=recount).pack(side='left')
+            tag=' · ⚠ nghi quảng cáo' if is_ad(p.get('text','')) else ''
+            likes=parse_likes(p);like_txt=f' · {int(likes)} like' if likes else ''
+            kw={'text_color':'#e88f8f'} if tag else {}
+            ctk.CTkLabel(row,text=f"@{p['username']}{like_txt}{tag} — "+' '.join(p.get('text','').split())[:130],wraplength=660,justify='left',anchor='w',**kw).pack(side='left',fill='x',expand=True)
+        def set_auto():
+            chosen=auto_pick(posts,int(self.max_posts.get()))
+            for p,var in zip(replies,variables):var.set(id(p) in chosen)
+            recount()
+        def set_all(value):
+            for var in variables:var.set(value)
+            recount()
+        self.button(bar,'Tự động chọn câu hài',set_auto,width=165);self.button(bar,'Chọn tất cả',lambda:set_all(True),width=105);self.button(bar,'Bỏ chọn hết',lambda:set_all(False),width=105)
+        def apply():
+            chosen=[p for p,var in zip(replies,variables) if var.get()]
+            self.picked_data[url]={'url':url,'posts':[posts[0]]+chosen}
+            self.max_posts.delete(0,'end');self.max_posts.insert(0,str(len(chosen)+1))
+            self.info.configure(text=f'Đã chốt {len(chosen)} bình luận cho bài …{url.rstrip("/").split("/")[-1]}. Bấm THÊM LINK VÀO HÀNG ĐỢI để tạo video đúng các câu này.')
+            win.destroy()
+        foot=ctk.CTkFrame(win,fg_color='transparent');foot.pack(fill='x',padx=10,pady=8)
+        ctk.CTkButton(foot,text='DÙNG CÁC CÂU ĐÃ CHỌN',command=apply).pack(side='right')
+        ctk.CTkButton(foot,text='Để tự động hoàn toàn',command=lambda:(self.picked_data.pop(url,None),win.destroy())).pack(side='right',padx=8)
+        recount()
+        try:win.grab_set()
+        except Exception:pass
 
     def enqueue_links(self):
         try:
@@ -153,7 +214,7 @@ class Workspace(ctk.CTk):
             if not links:raise ValueError('Nhập ít nhất một link Threads.')
             items=[]
             for url in links:
-                url=validate_url(url);items.append((url.rstrip('/').split('/')[-1],url,None))
+                url=validate_url(url);items.append((url.rstrip('/').split('/')[-1],url,self.picked_data.get(url)))
             self.enqueue(items)
         except Exception as e:messagebox.showerror('Kiểm tra nguồn',str(e),parent=self)
 
@@ -505,6 +566,8 @@ class Workspace(ctk.CTk):
                         self.creator_info=creator;self.creator_account=account
                         self.creator_label.configure(text='@'+creator.get('creator_username','')+' · '+creator.get('creator_nickname',''))
                         values=['Chọn quyền xem']+creator.get('privacy_level_options',[]);self.privacy.configure(values=values);self.privacy.set(values[0])
+                elif kind=='comments':
+                    url,data=value;self.open_comment_picker(url,data)
                 elif kind=='media_preview':
                     im,total=value;self.media_preview_img=ctk.CTkImage(im,size=im.size);self.media_panel.preview.configure(image=self.media_preview_img,text='');self.status.configure(text=f'Xem trước · video sau chỉnh sửa dài {total:.2f} giây. Bấm Lưu lớp media sau mỗi thay đổi thông số.')
             self.refresh()
