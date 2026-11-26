@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright
 import requests
 from bs4 import BeautifulSoup
-from .render import ROOT, Cancelled, probe
+from .render import ROOT, Cancelled, probe, run
 
 EXTRACT = r"""() => {
  const result=[], seen=new Set();
@@ -104,6 +104,17 @@ def attach_media(data, log=print):
             target.unlink(missing_ok=True); post.pop('media', None); continue  # downloaded file is not really a video
         if media.get('type') != 'video' and has_video:
             media['type'] = 'video'
+        if media.get('type') == 'video':
+            # Some Threads files are oddly muxed and ffmpeg refuses to loop them
+            # ('Operation not permitted'); rewrite once into a plain h264 mp4.
+            norm = cache / (target.stem + '.norm.mp4')
+            if norm.is_file() and norm.stat().st_size > 0:
+                media['path'] = str(norm); continue
+            try:
+                run(['ffmpeg', '-v', 'error', '-y', '-i', str(target), '-vf', "scale='min(720,iw)':-2", '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-movflags', '+faststart', str(norm)])
+                media['path'] = str(norm); continue
+            except Exception:
+                post.pop('media', None); continue
         media['path'] = str(target)
         log(f"Đã tải {media['type']} đính kèm của @{post['username']}.")
     return data
