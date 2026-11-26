@@ -36,6 +36,10 @@ ABBR = {
     'hoy': 'thôi', 'nhen': 'nhé', 'uhm': 'ừ', 'cũg': 'cũng',
     'hmai': 'ngày mai', 'ngmai': 'ngày mai', 'zui': 'vui', 'juan': 'chuẩn',
     'sịn': 'xịn', 'phake': 'hàng giả', 'auth': 'hàng chính hãng',
+    # Profanity INITIALISMS are not beeped: Vietnamese readers say the letter
+    # names out loud, so the voice does the same (dcm -> "đờ cờ mờ").
+    'dcm': 'đờ cờ mờ', 'đcm': 'đờ cờ mờ', 'cl': 'cờ lờ',
+    'đm': 'đờ mờ', 'đmm': 'đờ mờ mờ',
 }
 EMOJI = re.compile(r'[\U0001F000-\U0001FAFF\u2600-\u27ff\ufe0f\u200d]')
 
@@ -59,8 +63,8 @@ _MASKED_TOKEN = re.compile(r'[A-Za-zÀ-ỹĐđ][A-Za-zÀ-ỹĐđ*•]*[*•][A-Z
 # prefers them over their single-word parts.
 PROFANITY = (
     'địt mẹ', 'đụ má', 'vãi lồn', 'vãi cặc', 'con đĩ', 'đù má',
-    'địt', 'đụ', 'đéo', 'đĩ', 'đị', 'cặc', 'lồn', 'buồi', 'đcm', 'đmm', 'đm',
-    'fucking', 'fuck', 'fuk', 'fck', 'shit', 'bitch', 'dcm', 'cl',
+    'địt', 'đụ', 'đéo', 'đĩ', 'đị', 'cặc', 'lồn', 'buồi',
+    'fucking', 'fuck', 'fuk', 'fck', 'shit', 'bitch',
 )
 _PROFANITY_RE = re.compile(
     r'(?<![A-Za-zÀ-ỹĐđ])(?:' + '|'.join(re.escape(w) for w in PROFANITY) + r')(?![A-Za-zÀ-ỹĐđ])',
