@@ -160,7 +160,7 @@ def apply_captured_videos(posts, urls):
     """Threads' player streams through blob URLs, so the DOM only exposes a poster
     image. The real file was still fetched over the network: hand the captured .mp4
     URLs, in page order, to the posts that contain a video player."""
-    queue = list(urls)
+    queue = [u for u in urls if '.mp4' in u] + [u for u in urls if '.mp4' not in u]  # direct files first, manifests last
     for post in posts:
         if not queue:
             break
@@ -193,7 +193,11 @@ def fetch_thread(url, log=print, limit=30, cancel=None):
                 except Exception:
                     pass
             page.on('response', _capture)
+            def _capture_req(req):
+                if ('.mp4' in req.url or '.mpd' in req.url) and req.url not in captured:captured.append(req.url)
+            page.on('request', _capture_req)
             page.goto(url, wait_until='domcontentloaded', timeout=60000)
+            page.wait_for_timeout(2500)  # let the video player start fetching its file
             try:
                 page.locator('a[href*="/post/"] time').first.wait_for(timeout=15000)
             except Exception:
@@ -215,18 +219,23 @@ def fetch_thread(url, log=print, limit=30, cancel=None):
                 perf = page.evaluate("() => performance.getEntriesByType('resource').map(e => e.name).filter(u => u.includes('.mp4'))")
                 for u in perf:
                     if u not in captured:captured.append(u)
+                srcs = page.evaluate("() => [...document.querySelectorAll('video')].map(v => v.currentSrc || '').filter(u => u.startsWith('http'))")
+                for u in srcs:
+                    if u not in captured:captured.append(u)
             except Exception:
                 pass
             if captured:
                 log(f'Đã bắt được {len(captured)} link video thật từ trang Threads.')
                 apply_captured_videos(posts, captured)
+            elif any(x.get('has_video') for x in posts):
+                log('Bài có video nhưng chưa bắt được file video thật — sẽ thử tiếp qua trang nhúng của bài.')
             primary = next((x for x in posts if urlsplit(x['url']).path.rstrip('/') == urlsplit(url).path.rstrip('/')), None)
             if primary and primary.get('has_video') and (primary.get('media') or {}).get('type') != 'video':
                 try:  # the public embed page serves the post's own video as a plain file
                     ep = browser.new_page()
                     embed_hits = []
                     def _cap2(resp):
-                        if '.mp4' in resp.url and resp.url not in embed_hits:embed_hits.append(resp.url)
+                        if ('.mp4' in resp.url or '.mpd' in resp.url) and resp.url not in embed_hits:embed_hits.append(resp.url)
                     ep.on('response', _cap2)
                     ep.goto(url.rstrip('/') + '/embed', wait_until='domcontentloaded', timeout=30000)
                     ep.wait_for_timeout(3500)

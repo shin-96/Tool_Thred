@@ -72,8 +72,19 @@ class ProductionQueue:
             if event.is_set():raise Cancelled('Đã hủy tác vụ.')
             self.store.update_job(jid,status='rendering',progress=0)
             output=self.renderer(data,job['output'],**options,log=log,progress=lambda p:self.store.update_job(jid,progress=float(p)),cancel=event)
+            title=job['title']
+            try:  # name the video after what the author actually says, not the post slug
+                from .titles import summarize_title,slugify_title
+                summary=summarize_title(data['posts'][0]['text']) if data.get('posts') else ''
+                if summary:
+                    renamed=Path(output).with_name(slugify_title(summary)+'_'+jid[:8]+'.mp4')
+                    if renamed!=Path(output):
+                        if renamed.exists():renamed.unlink()
+                        Path(output).replace(renamed);output=str(renamed);title=summary
+                        self.store.execute('UPDATE jobs SET title=?,output=? WHERE id=?',(title,output,jid))
+            except Exception:pass
             meta=video_metadata(output);meta['caption']=data['posts'][0]['text'][:2000]
-            self.store.add_video(output,job['title'],meta,jid);self.store.update_job(jid,status='ready',progress=1,message='Video đã vào thư viện.')
+            self.store.add_video(output,title,meta,jid);self.store.update_job(jid,status='ready',progress=1,message='Video đã vào thư viện.')
         except Cancelled as e:self.store.update_job(jid,status='cancelled',message=str(e))
         except Exception as e:self.store.update_job(jid,status='failed',message=str(e));self.store.log(jid,str(e))
 

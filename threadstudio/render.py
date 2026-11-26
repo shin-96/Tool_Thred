@@ -202,7 +202,7 @@ def composite(c, style, pinned=None):
     return im
 
 
-def render(data, output, style='center', background='', music='', voice='ms-MY-YasminNeural', speech=True, speed=175, max_posts=12, resolution=720, log=print, progress=lambda x:None, cancel=None, speech_fallback=True,voice_api=None,edits=None,funny_only=False):
+def render(data, output, style='center', background='', music='', voice='ms-MY-YasminNeural', speech=True, speed=175, max_posts=12, resolution=720, log=print, progress=lambda x:None, cancel=None, speech_fallback=True,voice_api=None,edits=None,funny_only=False,music_volume=0.12,voice_volume=1.0):
     if not shutil.which('ffmpeg') or not shutil.which('ffprobe'):
         raise RuntimeError('Cần FFmpeg và ffprobe trong PATH. Chạy CAI_DAT.cmd.')
     if style not in {'center','top','grid'}:raise ValueError('Mẫu không hợp lệ.')
@@ -296,7 +296,9 @@ def render(data, output, style='center', background='', music='', voice='ms-MY-Y
     run(['ffmpeg','-v','error','-y','-f','concat','-safe','0','-i',concat,'-c','copy','-movflags','+faststart',joined],cancel)
     staging=work/'final.mp4'
     if music:
-        run(['ffmpeg','-v','error','-y','-i',joined,'-stream_loop','-1','-i',music,'-filter_complex','[1:a]volume=0.12[m];[0:a][m]amix=inputs=2:duration=first:normalize=0[a]','-map','0:v','-map','[a]','-c:v','copy','-c:a','aac','-t',str(elapsed),'-movflags','+faststart',staging],cancel)
+        run(['ffmpeg','-v','error','-y','-i',joined,'-stream_loop','-1','-i',music,'-filter_complex',f'[0:a]volume={float(voice_volume):.3f}[v0];[1:a]volume={float(music_volume):.3f}[m];[v0][m]amix=inputs=2:duration=first:normalize=0[a]','-map','0:v','-map','[a]','-c:v','copy','-c:a','aac','-t',str(elapsed),'-movflags','+faststart',staging],cancel)
+    elif float(voice_volume)!=1.0:
+        run(['ffmpeg','-v','error','-y','-i',joined,'-filter_complex',f'[0:a]volume={float(voice_volume):.3f}[a]','-map','0:v','-map','[a]','-c:v','copy','-c:a','aac','-movflags','+faststart',staging],cancel)
     else:shutil.copy2(joined,staging)
     if edits:
         from .editing import edit_video,normalize

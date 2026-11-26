@@ -84,6 +84,13 @@ class Store:
         self.execute('INSERT OR IGNORE INTO videos(id,job_id,title,path,caption,duration,width,height,thumbnail,created) VALUES(?,?,?,?,?,?,?,?,?,?)',(vid,job_id,title,path,meta.get('caption',title),meta.get('duration',0),meta.get('width',0),meta.get('height',0),meta.get('thumbnail',''),now()))
         return self.rows('SELECT id FROM videos WHERE path=?',(path,))[0]['id']
 
+    def delete_video(self,vid):
+        rows=self.rows('SELECT * FROM videos WHERE id=?',(vid,))
+        if not rows:return None
+        self.execute('DELETE FROM uploads WHERE video_id=?',(vid,))
+        self.execute('DELETE FROM videos WHERE id=?',(vid,))
+        return rows[0]
+
     def new_upload(self,video_id,account,mode,caption):
         # Block duplicate or unresolved submissions, including after app restart.
         existing=self.rows("SELECT id FROM uploads WHERE video_id=? AND account=? AND status NOT IN ('failed','cancelled')",(video_id,account))

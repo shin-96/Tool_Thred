@@ -101,6 +101,10 @@ class Workspace(ctk.CTk):
         self.all_styles=ctk.CTkCheckBox(right,text='Tạo cả 3 mẫu cho mỗi nguồn');self.all_styles.pack(anchor='w',padx=12,pady=8)
         self.bg=self.path_input(right,'Video nền',str(ROOT/'assets'/'gameplay.mp4'))
         self.music=self.path_input(right,'Nhạc nền')
+        row=ctk.CTkFrame(right,fg_color='transparent');row.pack(fill='x',padx=12,pady=5)
+        ctk.CTkLabel(row,text='Âm lượng nhạc nền (%)').pack(side='left');self.music_vol=ctk.CTkEntry(row,width=55);self.music_vol.insert(0,'12');self.music_vol.pack(side='right')
+        row=ctk.CTkFrame(right,fg_color='transparent');row.pack(fill='x',padx=12,pady=5)
+        ctk.CTkLabel(row,text='Âm lượng giọng đọc (%)').pack(side='left');self.voice_vol=ctk.CTkEntry(row,width=55);self.voice_vol.insert(0,'100');self.voice_vol.pack(side='right')
         self.speech=ctk.CTkSwitch(right,text='Giọng đọc trực tuyến');self.speech.select();self.speech.pack(anchor='w',padx=12,pady=8)
         self.voice_menu=ctk.CTkOptionMenu(right,values=list(VOICES));self.voice_menu.pack(fill='x',padx=12,pady=5)
         self.voice_api_menu=ctk.CTkOptionMenu(right,values=['Edge · có sẵn'],command=lambda _:self.voice_source_changed());self.voice_api_menu.pack(fill='x',padx=12,pady=5)
@@ -126,7 +130,10 @@ class Workspace(ctk.CTk):
         if shutil.disk_usage(output).free<512*1024**2:raise ValueError('Ổ đĩa còn dưới 512 MB. Chọn ổ còn trống trước khi dựng.')
         api=self.selected_voice_api(self.voice_api_menu.get())
         edits=json.loads(json.dumps(self.media_panel.items)) if self.media_panel.use_batch.get() else []
-        return dict(style=style,background=self.bg.get(),music=self.music.get(),speech=bool(self.speech.get()),voice=VOICES[self.voice_menu.get()],max_posts=n,speed=speed,resolution=1080 if self.resolution.get()=='1080p' else 720,speech_fallback=bool(self.speech_fallback.get()),voice_api=api,edits=edits,funny_only=bool(self.funny_only.get()))
+        mv=float(self.music_vol.get());vv=float(self.voice_vol.get())
+        if not 0<=mv<=100:raise ValueError('Âm lượng nhạc nền phải từ 0 đến 100%.')
+        if not 0<=vv<=200:raise ValueError('Âm lượng giọng đọc phải từ 0 đến 200%.')
+        return dict(style=style,background=self.bg.get(),music=self.music.get(),music_volume=mv/100,voice_volume=vv/100,speech=bool(self.speech.get()),voice=VOICES[self.voice_menu.get()],max_posts=n,speed=speed,resolution=1080 if self.resolution.get()=='1080p' else 720,speech_fallback=bool(self.speech_fallback.get()),voice_api=api,edits=edits,funny_only=bool(self.funny_only.get()))
 
     def refresh_voice_choices(self):
         profiles=self.store.get_setting('voice_apis',{});self.api_voice_labels={'API · '+p['name']+' · '+pid[:6]:pid for pid,p in profiles.items()}
@@ -335,7 +342,7 @@ class Workspace(ctk.CTk):
         tab=self.tabs.tab('Thư viện video');self.heading(tab,'Chọn video để xem, chỉnh caption và đưa lên TikTok','Ctrl / Shift để chọn nhiều video. Chỉ các mục được chọn mới đi vào bước đăng.')
         row=ctk.CTkFrame(tab,fg_color='transparent');row.pack(fill='x',padx=10)
         self.search=ctk.CTkEntry(row,placeholder_text='Tìm tên video…',width=230);self.search.pack(side='left',padx=4);self.search.bind('<KeyRelease>',lambda _:self.refresh())
-        self.button(row,'Nhập MP4 có sẵn',self.import_videos,width=150);self.button(row,'Xem video',self.play_video,width=110);self.button(row,'Sửa caption',self.edit_caption,width=120);self.button(row,'Chọn để đăng TikTok',self.go_tiktok,width=180)
+        self.button(row,'Nhập MP4 có sẵn',self.import_videos,width=150);self.button(row,'Xem video',self.play_video,width=110);self.button(row,'Sửa caption',self.edit_caption,width=120);self.button(row,'Xóa video',self.delete_videos,width=110);self.button(row,'Chọn để đăng TikTok',self.go_tiktok,width=180)
         body=ctk.CTkFrame(tab,fg_color='transparent');body.pack(fill='both',expand=True)
         self.library_left=ctk.CTkFrame(body);self.library_left.pack(side='left',fill='both',expand=True,padx=(6,5),pady=6)
         self.library_tree=table(self.library_left,[('title','Video',250),('duration','Độ dài',80),('size','Khung hình',110),('status','TikTok',165)])
@@ -372,6 +379,22 @@ class Workspace(ctk.CTk):
         if records:
             if Path(records[0]['path']).exists():os.startfile(records[0]['path'])
             else:messagebox.showerror('Không tìm thấy tệp','Video đã bị di chuyển khỏi đường dẫn thư viện.')
+
+    def delete_videos(self):
+        records=self.selected_records()
+        if not records:messagebox.showinfo('Xóa video','Chọn ít nhất một video trong thư viện để xóa.');return
+        names='\n'.join('• '+v['title'] for v in records[:6])+('\n…' if len(records)>6 else '')
+        if not messagebox.askokcancel('Xóa video',f'Xóa {len(records)} video khỏi thư viện và XÓA FILE khỏi ổ đĩa?\n\n{names}'):return
+        done=0
+        for v in records:
+            row=self.store.delete_video(v['id'])
+            if row:
+                for f in (row['path'],row['thumbnail']):
+                    if f:
+                        try:Path(f).unlink(missing_ok=True)
+                        except Exception:pass
+                done+=1
+        self.selected_videos=set();self.refresh();self.notify(f'Đã xóa {done} video khỏi thư viện.')
 
     def edit_caption(self):
         records=self.selected_records()
