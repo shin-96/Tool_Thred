@@ -12,6 +12,7 @@ import uuid
 import time
 from pathlib import Path
 
+import re
 import requests
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
@@ -67,6 +68,35 @@ def probe(path):
     return json.loads(subprocess.check_output(['ffprobe', '-v', 'quiet', '-show_format', '-show_streams', '-of', 'json', str(path)], creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0))
 
 
+
+def _google_tts(text, audio, cancel=None):
+    """Independent fallback voice: Google Translate TTS (Vietnamese). The endpoint
+    caps each request near 200 characters, so long text is read in chunks and the
+    MP3 parts are joined; the render re-encodes the mix anyway."""
+    import requests
+    from urllib.parse import quote
+    chunks, cur = [], ''
+    for piece in re.split(r'(?<=[.!?…;])\s+', text.replace('\n', ' ')):
+        for word in piece.split():
+            while len(word) > 180:
+                if cur: chunks.append(cur); cur = ''
+                chunks.append(word[:180]); word = word[180:]
+            if len(cur) + len(word) + 1 > 180:
+                chunks.append(cur); cur = word
+            else:
+                cur = (cur + ' ' + word).strip()
+    if cur: chunks.append(cur)
+    chunks = [c for c in chunks if c.strip()]
+    if not chunks: raise RuntimeError('Không có nội dung để đọc.')
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+    parts = []
+    for chunk in chunks:
+        if cancel and cancel.is_set(): raise Cancelled('Đã hủy giọng đọc.')
+        r = requests.get('https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&tl=vi&q=' + quote(chunk), headers=headers, timeout=30)
+        if r.status_code != 200 or len(r.content) < 400: raise RuntimeError(f'Giọng Google trả HTTP {r.status_code}.')
+        parts.append(r.content)
+    Path(audio).write_bytes(b''.join(parts))
+
 def synthesize(text,voice,audio,log,cancel=None,fallback=True):
     import edge_tts
     candidates=[voice]
@@ -95,6 +125,19 @@ def synthesize(text,voice,audio,log,cancel=None,fallback=True):
                         if cancel and cancel.wait(1+attempt):raise Cancelled('Đã hủy giọng đọc.')
                         if cancel is None:threading.Event().wait(1+attempt)
             VOICE_COOLDOWN[candidate]=time.monotonic()+120
+        if fallback:
+            try:
+                log('Giọng Microsoft chưa phản hồi. Đang dùng giọng Google dự phòng.')
+                cached_g=cache/(hashlib.sha256(('google-vi'+text).encode()).hexdigest()+'.mp3')
+                if cached_g.exists():
+                    try:probe(cached_g);shutil.copy2(cached_g,audio);return 'google-vi'
+                    except Exception:pass
+                _google_tts(text,audio,cancel)
+                probe(audio)
+                tmp=cached_g.with_suffix('.'+uuid.uuid4().hex+'.tmp');shutil.copy2(audio,tmp);tmp.replace(cached_g)
+                return 'google-vi'
+            except Exception as e:
+                last=e
         raise RuntimeError('Dịch vụ giọng đọc chưa phản hồi sau các lần thử. Có thể đổi giọng hoặc tắt giọng trong Sửa tác vụ rồi Thử lại. '+str(last))
 
 
