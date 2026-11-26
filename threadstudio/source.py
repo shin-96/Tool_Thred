@@ -39,7 +39,7 @@ EXTRACT = r"""() => {
    });
    if(imgs.length)media={type:'image',url:imgs[0].src};
   }
-  result.push({username:user,text, url:new URL(href,location.origin).href,date:a.innerText,avatar:img?.src||'',verified:!!el.querySelector('[aria-label="Verified"],svg[title="Verified"]'),stats:buttons.filter(x=>/^(Like|Comment|Repost|Share)/.test(x)),media});
+  result.push({username:user,text, url:new URL(href,location.origin).href,date:a.innerText,avatar:img?.src||'',verified:!!el.querySelector('[aria-label="Verified"],svg[title="Verified"]'),stats:buttons.filter(x=>/^(Like|Comment|Repost|Share)/.test(x)),media,has_video:!!vid});
   seen.add(href);
  }
  return result;
@@ -156,6 +156,20 @@ def open_login_browser(log=print):
                 pass
 
 
+def apply_captured_videos(posts, urls):
+    """Threads' player streams through blob URLs, so the DOM only exposes a poster
+    image. The real file was still fetched over the network: hand the captured .mp4
+    URLs, in page order, to the posts that contain a video player."""
+    queue = list(urls)
+    for post in posts:
+        if not queue:
+            break
+        media = post.get('media') or {}
+        if post.get('has_video') and media.get('type') != 'video':
+            post['media'] = {'type': 'video', 'url': queue.pop(0)}
+    return posts
+
+
 def fetch_thread(url, log=print, limit=30, cancel=None):
     url = validate_url(url)
     limit=max(0,min(200,int(limit)))
@@ -170,6 +184,15 @@ def fetch_thread(url, log=print, limit=30, cancel=None):
         browser = _launch_context(p, headless=True)
         try:
             page = browser.pages[0] if browser.pages else browser.new_page()
+            captured = []
+            def _capture(resp):
+                try:
+                    ctype = resp.headers.get('content-type', '')
+                    if (ctype.startswith('video/') or '.mp4' in resp.url) and resp.url not in captured:
+                        captured.append(resp.url)
+                except Exception:
+                    pass
+            page.on('response', _capture)
             page.goto(url, wait_until='domcontentloaded', timeout=60000)
             try:
                 page.locator('a[href*="/post/"] time').first.wait_for(timeout=15000)
@@ -188,7 +211,32 @@ def fetch_thread(url, log=print, limit=30, cancel=None):
                     break
                 page.mouse.wheel(0, 850)
                 page.wait_for_timeout(1200)
+            try:
+                perf = page.evaluate("() => performance.getEntriesByType('resource').map(e => e.name).filter(u => u.includes('.mp4'))")
+                for u in perf:
+                    if u not in captured:captured.append(u)
+            except Exception:
+                pass
+            if captured:
+                log(f'Đã bắt được {len(captured)} link video thật từ trang Threads.')
+                apply_captured_videos(posts, captured)
             primary = next((x for x in posts if urlsplit(x['url']).path.rstrip('/') == urlsplit(url).path.rstrip('/')), None)
+            if primary and primary.get('has_video') and (primary.get('media') or {}).get('type') != 'video':
+                try:  # the public embed page serves the post's own video as a plain file
+                    ep = browser.new_page()
+                    embed_hits = []
+                    def _cap2(resp):
+                        if '.mp4' in resp.url and resp.url not in embed_hits:embed_hits.append(resp.url)
+                    ep.on('response', _cap2)
+                    ep.goto(url.rstrip('/') + '/embed', wait_until='domcontentloaded', timeout=30000)
+                    ep.wait_for_timeout(3500)
+                    perf2 = ep.evaluate("() => performance.getEntriesByType('resource').map(e => e.name).filter(u => u.includes('.mp4'))")
+                    for u in perf2:
+                        if u not in embed_hits:embed_hits.append(u)
+                    if embed_hits:primary['media'] = {'type': 'video', 'url': embed_hits[0]}
+                    ep.close()
+                except Exception:
+                    pass
             if primary:
                 posts.remove(primary)
                 if fallback:

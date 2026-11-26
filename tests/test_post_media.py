@@ -64,6 +64,19 @@ class AttachMediaTests(unittest.TestCase):
         self.assertNotIn('media', data['posts'][0])
 
 
+class CapturedVideoTests(unittest.TestCase):
+    def test_captured_mp4_goes_to_video_posts_only(self):
+        posts = [
+            {'username': 'op', 'has_video': True, 'media': {'type': 'image', 'url': 'https://cdn/poster.jpg'}},
+            {'username': 'photo', 'has_video': False, 'media': {'type': 'image', 'url': 'https://cdn/pic.jpg'}},
+            {'username': 'clip', 'has_video': True},
+        ]
+        source_module.apply_captured_videos(posts, ['https://scontent/v1.mp4', 'https://scontent/v2.mp4'])
+        self.assertEqual(posts[0]['media'], {'type': 'video', 'url': 'https://scontent/v1.mp4'})
+        self.assertEqual(posts[1]['media'], {'type': 'image', 'url': 'https://cdn/pic.jpg'})
+        self.assertEqual(posts[2]['media'], {'type': 'video', 'url': 'https://scontent/v2.mp4'})
+
+
 class RenderMediaTests(unittest.TestCase):
     def test_media_becomes_scene_background(self):
         with tempfile.TemporaryDirectory() as td:
