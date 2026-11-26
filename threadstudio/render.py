@@ -207,6 +207,10 @@ def render(data, output, style='center', background='', music='', voice='ms-MY-Y
         raise RuntimeError('Cần FFmpeg và ffprobe trong PATH. Chạy CAI_DAT.cmd.')
     if style not in {'center','top','grid'}:raise ValueError('Mẫu không hợp lệ.')
     if not 60 <= int(speed) <= 400: raise ValueError('Tốc độ đọc phải từ 60 đến 400 từ/phút.')
+    try:
+        from .source import attach_media
+        attach_media(data,log)
+    except Exception:pass  # media is optional; never block a render on it
     from .comment_filter import select_posts
     posts=select_posts(data.get('posts',[]),int(max_posts),funny_only,log=log)
     if not posts: raise ValueError('Dự án chưa có bài viết.')
@@ -233,7 +237,11 @@ def render(data, output, style='center', background='', music='', voice='ms-MY-Y
             if style=='grid' and pi>0 and 140+pinned.height+40+c.height>H-70:
                 raise ValueError('Thẻ quá dài. Hãy chia nội dung trong dự án thành đoạn ngắn hơn.')
             png=work/f'card_{len(segments):03}.png';frame.save(png)
-            segments.append({'text':' '.join(lines),'png':png,'author':post['username']})
+            media=None
+            if ci==0:
+                m=post.get('media') or {}
+                if m.get('path') and Path(m['path']).is_file():media=(m.get('type','image'),m['path'])
+            segments.append({'text':' '.join(lines),'png':png,'author':post['username'],'media':media})
     log(f'Đang dựng {len(segments)} cảnh từ {len(posts)} bài/bình luận…')
     parts=[]; timeline=[]; elapsed=0
     for i,s in enumerate(segments):
@@ -255,6 +263,12 @@ def render(data, output, style='center', background='', music='', voice='ms-MY-Y
         if style=='grid':
             cmd+=['-loop','1','-framerate','30','-i',png]
             vf=f'[0:v]scale={resolution}:{int(resolution*16/9)//2*2},format=yuv420p[v]';aidx=1
+        elif s.get('media') and s['media'][0]=='video':
+            cmd+=['-stream_loop','-1','-i',s['media'][1],'-loop','1','-framerate','30','-i',png]
+            vf=f'[0:v]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,setsar=1[bg];[bg][1:v]overlay=0:0:shortest=1,scale={resolution}:{int(resolution*16/9)//2*2},format=yuv420p[v]';aidx=2
+        elif s.get('media'):
+            cmd+=['-loop','1','-framerate','30','-i',s['media'][1],'-loop','1','-framerate','30','-i',png]
+            vf=f'[0:v]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,setsar=1[bg];[bg][1:v]overlay=0:0:shortest=1,scale={resolution}:{int(resolution*16/9)//2*2},format=yuv420p[v]';aidx=2
         else:
             cmd+=['-stream_loop','-1','-ss',str(elapsed%float(probe(background)['format']['duration'])),'-i',background,'-loop','1','-framerate','30','-i',png]
             vf=f'[0:v]scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280,setsar=1[bg];[bg][1:v]overlay=0:0:shortest=1,scale={resolution}:{int(resolution*16/9)//2*2},format=yuv420p[v]';aidx=2

@@ -184,6 +184,7 @@ class Workspace(ctk.CTk):
             row=ctk.CTkFrame(frame,fg_color='transparent');row.pack(fill='x',pady=2)
             ctk.CTkCheckBox(row,text='',variable=var,width=24,command=recount).pack(side='left')
             tag=' · ⚠ nghi quảng cáo' if is_ad(p.get('text','')) else ''
+            if p.get('media'):tag+=' · có video đính kèm' if p['media'].get('type')=='video' else ' · có ảnh đính kèm'
             likes=parse_likes(p);like_txt=f' · {int(likes)} like' if likes else ''
             kw={'text_color':'#e88f8f'} if tag else {}
             ctk.CTkLabel(row,text=f"@{p['username']}{like_txt}{tag} — "+' '.join(p.get('text','').split())[:130],wraplength=660,justify='left',anchor='w',**kw).pack(side='left',fill='x',expand=True)

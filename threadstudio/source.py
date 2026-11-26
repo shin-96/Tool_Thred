@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 import threading
@@ -7,7 +8,7 @@ from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright
 import requests
 from bs4 import BeautifulSoup
-from .render import Cancelled
+from .render import ROOT, Cancelled
 
 EXTRACT = r"""() => {
  const result=[], seen=new Set();
@@ -24,7 +25,19 @@ EXTRACT = r"""() => {
   const buttons=Array.from(el.querySelectorAll('button,[role="button"]')).map(x=>(x.getAttribute('aria-label')||x.querySelector('[aria-label]')?.getAttribute('aria-label')||x.querySelector('svg title')?.textContent||'')+' '+x.innerText);
   const text=lines.join('\n').split('\n').map(x=>x.trim()).filter(x=> x!==user && !/^(Thread|[\d.,KMB]+ views|\d+[smhdwy]|[\d.,]+[KMB]?|Translate|Author|· Author|AI content|Edited|Replying to.*)$/.test(x) && x.length>1).join('\n');
   const img=el.querySelector('img');
-  result.push({username:user,text, url:new URL(href,location.origin).href,date:a.innerText,avatar:img?.src||'',verified:!!el.querySelector('[aria-label="Verified"],svg[title="Verified"]'),stats:buttons.filter(x=>/^(Like|Comment|Repost|Share)/.test(x))});
+  let media=null;
+  const vid=el.querySelector('video');
+  if(vid){const vs=vid.getAttribute('src')||'';if(/^https:/.test(vs))media={type:'video',url:vs};else if(vid.getAttribute('poster'))media={type:'image',url:vid.getAttribute('poster')};}
+  if(!media){
+   const imgs=Array.from(el.querySelectorAll('img')).filter(im=>{
+    const a=im.closest('a');const href=a?a.getAttribute('href')||'':'';
+    if(/\/media/.test(href))return true;
+    if(/^\/@[^/]+\/?$/.test(href))return false;
+    return (im.naturalWidth||0)>=320;
+   });
+   if(imgs.length)media={type:'image',url:imgs[0].src};
+  }
+  result.push({username:user,text, url:new URL(href,location.origin).href,date:a.innerText,avatar:img?.src||'',verified:!!el.querySelector('[aria-label="Verified"],svg[title="Verified"]'),stats:buttons.filter(x=>/^(Like|Comment|Repost|Share)/.test(x)),media});
   seen.add(href);
  }
  return result;
@@ -45,8 +58,45 @@ def metadata_post(html, url):
     if not meta.get('og:description','').strip() or '/post/' not in meta.get('og:url',''):
         return None
     if re.search(r'/post/([\w-]+)',meta['og:url']).group(1) != re.search(r'/post/([\w-]+)',url).group(1):return None
-    return {'username':re.search(r'/@([^/]+)',url).group(1),'text':meta['og:description'].strip(),'url':url,'date':'','avatar':'','stats':[],'verified':False}
+    post={'username':re.search(r'/@([^/]+)',url).group(1),'text':meta['og:description'].strip(),'url':url,'date':'','avatar':'','stats':[],'verified':False}
+    if meta.get('og:video'):post['media']={'type':'video','url':meta['og:video']}
+    elif meta.get('og:image'):post['media']={'type':'image','url':meta['og:image']}
+    return post
 
+
+def attach_media(data, log=print):
+    """Download post/comment media (image/video) to a local cache and record the file
+    path on each post. Posts whose media cannot be downloaded keep no media and render
+    with the normal gameplay background."""
+    cache = ROOT / 'data' / 'post_media'; cache.mkdir(parents=True, exist_ok=True)
+    for post in data.get('posts', []):
+        media = post.get('media')
+        if not media or not media.get('url'):
+            continue
+        if media.get('path') and Path(media['path']).is_file():
+            continue
+        ext = Path(urlsplit(media['url']).path).suffix.lower()
+        if ext not in {'.jpg', '.jpeg', '.png', '.webp', '.mp4', '.mov', '.webm'}:
+            ext = '.mp4' if media.get('type') == 'video' else '.jpg'
+        target = cache / (hashlib.sha1(media['url'].encode()).hexdigest()[:16] + ext)
+        if not target.is_file():
+            try:
+                r = requests.get(media['url'], headers={'User-Agent': 'Mozilla/5.0', 'Referer': 'https://www.threads.com/'}, timeout=25, stream=True)
+                r.raise_for_status()
+                size = 0
+                with open(target, 'wb') as f:
+                    for chunk in r.iter_content(262144):
+                        size += len(chunk)
+                        if size > 80 * 1024 * 1024:
+                            raise ValueError('media too large')
+                        f.write(chunk)
+            except Exception:
+                target.unlink(missing_ok=True)
+                post.pop('media', None)
+                continue
+        media['path'] = str(target)
+        log(f"Đã tải {media['type']} đính kèm của @{post['username']}.")
+    return data
 
 def fetch_thread(url, log=print, limit=30, cancel=None):
     url = validate_url(url)
@@ -83,17 +133,22 @@ def fetch_thread(url, log=print, limit=30, cancel=None):
             primary = next((x for x in posts if urlsplit(x['url']).path.rstrip('/') == urlsplit(url).path.rstrip('/')), None)
             if primary:
                 posts.remove(primary)
-                if fallback:primary['text']=fallback['text']
+                if fallback:
+                    primary['text']=fallback['text']
+                    if not primary.get('media') and fallback.get('media'):primary['media']=fallback['media']
             elif fallback:primary=fallback
             else:raise RuntimeError('Chưa lấy được nội dung bài này. Kiểm tra link, thử lại, hoặc nhập nội dung trong cửa sổ Sửa bài viết. Threads có thể yêu cầu đăng nhập.')
             data = {'url': url, 'posts': [primary] + posts[:limit], 'notice': 'Chỉ lấy bình luận Threads hiển thị công khai; có thể ít hơn số đếm trên bài.'}
+            attach_media(data, log)
             log(f"Đã lấy bài gốc và {len(data['posts']) - 1} bình luận công khai.")
             return data
         except Cancelled:raise
         except Exception:
             if not fallback:raise
             log('Đã lấy bài gốc từ nội dung công khai dự phòng; chưa tải được bình luận. Có thể thử lại sau.')
-            return {'url':url,'posts':[fallback],'notice':'Nội dung công khai dự phòng; chưa tải được bình luận.'}
+            data={'url':url,'posts':[fallback],'notice':'Nội dung công khai dự phòng; chưa tải được bình luận.'}
+            attach_media(data, log)
+            return data
         finally:
             browser.close()
 
