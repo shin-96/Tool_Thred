@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 from playwright.sync_api import sync_playwright
 import requests
 from bs4 import BeautifulSoup
-from .render import ROOT, Cancelled
+from .render import ROOT, Cancelled, probe
 
 EXTRACT = r"""() => {
  const result=[], seen=new Set();
@@ -29,7 +29,7 @@ EXTRACT = r"""() => {
   const img=el.querySelector('img');
   let media=null;
   const vid=el.querySelector('video');
-  if(vid){const vs=vid.getAttribute('src')||'';if(/^https:/.test(vs))media={type:'video',url:vs};else if(vid.getAttribute('poster'))media={type:'image',url:vid.getAttribute('poster')};}
+  if(vid){const vs=vid.currentSrc||vid.getAttribute('src')||(vid.querySelector('source')?vid.querySelector('source').getAttribute('src'):'')||'';if(/^https:/.test(vs))media={type:'video',url:vs};else if(vid.getAttribute('poster'))media={type:'image',url:vid.getAttribute('poster')};}
   if(!media){
    const imgs=Array.from(el.querySelectorAll('img')).filter(im=>{
     const a=im.closest('a');const href=a?a.getAttribute('href')||'':'';
@@ -96,6 +96,14 @@ def attach_media(data, log=print):
                 target.unlink(missing_ok=True)
                 post.pop('media', None)
                 continue
+        try:
+            has_video = any(st.get('codec_type') == 'video' and st.get('codec_name') not in {'png', 'mjpeg', 'bmp', 'webp', 'gif', 'tiff'} for st in probe(target).get('streams', []))  # ffprobe reports still images as video streams too
+        except Exception:
+            has_video = media.get('type') == 'video'
+        if media.get('type') == 'video' and not has_video:
+            target.unlink(missing_ok=True); post.pop('media', None); continue  # downloaded file is not really a video
+        if media.get('type') != 'video' and has_video:
+            media['type'] = 'video'
         media['path'] = str(target)
         log(f"Đã tải {media['type']} đính kèm của @{post['username']}.")
     return data
@@ -185,7 +193,8 @@ def fetch_thread(url, log=print, limit=30, cancel=None):
                 posts.remove(primary)
                 if fallback:
                     primary['text']=fallback['text']
-                    if not primary.get('media') and fallback.get('media'):primary['media']=fallback['media']
+                    if fallback.get('media') and (not primary.get('media') or (fallback['media'].get('type')=='video' and primary['media'].get('type')!='video')):
+                        primary['media']=fallback['media']
             elif fallback:primary=fallback
             else:raise RuntimeError('Chưa lấy được nội dung bài này. Threads có thể đang bắt đăng nhập trong trình duyệt của app — bấm nút "Đăng nhập Threads" ở tab Tạo hàng loạt, đăng nhập một lần trong cửa sổ trình duyệt hiện ra, rồi thử lại.')
             data = {'url': url, 'posts': [primary] + posts[:limit], 'notice': 'Chỉ lấy bình luận Threads hiển thị công khai; có thể ít hơn số đếm trên bài.'}

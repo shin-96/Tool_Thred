@@ -32,6 +32,30 @@ class AttachMediaTests(unittest.TestCase):
         self.assertTrue(Path(media['path']).is_file())
         Path(media['path']).unlink(missing_ok=True)
 
+    def test_poster_disguised_as_video_is_dropped(self):
+        with tempfile.TemporaryDirectory() as td:
+            png = Path(td) / 'p.png'
+            Image.new('RGB', (64, 64), (200, 0, 0)).save(png)
+            data = {'posts': [{'username': 'op', 'text': 'x',
+                                'media': {'type': 'video', 'url': 'https://cdn.example/poster.mp4'}}]}
+            with mock.patch.object(source_module.requests, 'get', return_value=FakeResponse(png.read_bytes())):
+                source_module.attach_media(data, log=lambda m: None)
+            self.assertNotIn('media', data['posts'][0])
+
+    def test_image_that_is_really_video_is_upgraded(self):
+        with tempfile.TemporaryDirectory() as td:
+            clip = Path(td) / 'c.mp4'
+            run(['ffmpeg', '-v', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=blue:s=64x64:r=30:d=1',
+                 '-c:v', 'libx264', '-pix_fmt', 'yuv420p', str(clip)])
+            data = {'posts': [{'username': 'op', 'text': 'x',
+                                'media': {'type': 'image', 'url': 'https://cdn.example/clip.jpg'}}]}
+            with mock.patch.object(source_module.requests, 'get', return_value=FakeResponse(clip.read_bytes())):
+                source_module.attach_media(data, log=lambda m: None)
+            media = data['posts'][0]['media']
+            self.assertEqual(media['type'], 'video')
+            self.assertTrue(Path(media['path']).is_file())
+            Path(media['path']).unlink(missing_ok=True)
+
     def test_failed_download_drops_media(self):
         data = {'posts': [{'username': 'op', 'text': 'x',
                             'media': {'type': 'video', 'url': 'https://cdn.example/v.mp4'}}]}
