@@ -25,17 +25,16 @@ EXTRACT = r"""() => {
   const lines=Array.from(el.querySelectorAll('[dir="auto"]')).filter(x=> !x.querySelector('[dir="auto"]')).map(x=>x.innerText.trim()).filter(Boolean);
   const user=(href.match(/\/@([^/]+)/)||[])[1];
   const buttons=Array.from(el.querySelectorAll('button,[role="button"]')).map(x=>(x.getAttribute('aria-label')||x.querySelector('[aria-label]')?.getAttribute('aria-label')||x.querySelector('svg title')?.textContent||'')+' '+x.innerText);
-  const text=lines.join('\n').split('\n').map(x=>x.trim()).filter(x=> x!==user && !/^(Thread|[\d.,KMB]+ views|\d+[smhdwy]|[\d.,]+[KMB]?|Translate|Author|· Author|AI content|Edited|Replying to.*)$/.test(x) && x.length>1).join('\n');
+  const text=lines.join('\n').split('\n').map(x=>x.trim()).filter(x=> x!==user && !/^(Thread|[\d.,KMB]+ views|\d+[smhdwy]|[\d.,]+[KMB]?|Translate|Author|· Author|AI content|Edited|Replying to.*|Reply to.*)$/.test(x) && x.length>1).join('\n');
   const img=el.querySelector('img');
   let media=null;
   const vid=el.querySelector('video');
   if(vid){const vs=vid.currentSrc||vid.getAttribute('src')||(vid.querySelector('source')?vid.querySelector('source').getAttribute('src'):'')||'';if(/^https:/.test(vs))media={type:'video',url:vs};else if(vid.getAttribute('poster'))media={type:'image',url:vid.getAttribute('poster')};}
   if(!media){
+   const pid=(href.split('/post/')[1]||'').split('/')[0];
    const imgs=Array.from(el.querySelectorAll('img')).filter(im=>{
     const a=im.closest('a');const href=a?a.getAttribute('href')||'':'';
-    if(/\/media/.test(href))return true;
-    if(/^\/@[^/]+\/?$/.test(href))return false;
-    return (im.naturalWidth||0)>=320;
+    return !!pid && href.includes('/post/'+pid);  // only images linked from THIS post; loose images are banners/previews of other content
    });
    if(imgs.length)media={type:'image',url:imgs[0].src};
   }
@@ -237,10 +236,12 @@ def fetch_thread(url, log=print, limit=30, cancel=None):
                 pass
             if captured:
                 log(f'Đã bắt được {len(captured)} link video thật từ trang Threads.')
-                apply_captured_videos(posts, captured)
-            elif any(x.get('has_video') for x in posts):
-                log('Bài có video nhưng chưa bắt được file video thật — sẽ thử tiếp qua trang nhúng của bài.')
             primary = next((x for x in posts if urlsplit(x['url']).path.rstrip('/') == urlsplit(url).path.rstrip('/')), None)
+            if primary and primary.get('has_video') and (primary.get('media') or {}).get('type') != 'video' and captured:
+                mp4s = [u for u in captured if '.mp4' in u] or captured
+                primary['media'] = {'type': 'video', 'url': mp4s[0]}
+            elif primary and primary.get('has_video') and (primary.get('media') or {}).get('type') != 'video':
+                log('Bài có video nhưng chưa bắt được file video thật — sẽ thử tiếp qua trang nhúng của bài.')
             if primary and primary.get('has_video') and (primary.get('media') or {}).get('type') != 'video':
                 try:  # the public embed page serves the post's own video as a plain file
                     ep = browser.new_page()
