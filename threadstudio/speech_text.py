@@ -18,6 +18,16 @@ ABBR = {
     'cx': 'cũng', 'nx': 'nữa', 'ntn': 'như thế nào', 'tn': 'tin nhắn', 'kb': 'kết bạn',
     'rep': 'trả lời', 'cmt': 'bình luận', 'bl': 'bình luận', 'fl': 'theo dõi',
     'đkí': 'đăng ký', 'dki': 'đăng ký', 'oce': 'ok', 'okie': 'ok', 'oke': 'ok',
+    'bt': 'bình thường', 'klq': 'không liên quan', 'uk': 'ừ', 'uh': 'ừ',
+    'hem': 'không', 'khum': 'không', 'khg': 'không', 'chx': 'chưa',
+    'ròi': 'rồi', 'zậy': 'vậy', 'lm': 'làm', 'nt': 'nhắn tin', 'tym': 'tim',
+    'avt': 'avatar', 'vd': 'ví dụ', 'vde': 'vấn đề', 'acc': 'tài khoản',
+    'gv': 'giáo viên', 'sđt': 'số điện thoại', 'ex': 'người yêu cũ',
+    'iu': 'yêu', 'xink': 'xinh', 'dth': 'dễ thương', 'tks': 'cảm ơn',
+    'sr': 'xin lỗi', 'mxh': 'mạng xã hội', 'cđm': 'cộng đồng mạng',
+    'hcm': 'Hồ Chí Minh', 'sg': 'Sài Gòn', 'k': 'không', 'e': 'em',
+    'bít': 'biết', 'vch': 'vãi chưởng', 'vk': 'vợ', 'ox': 'ông xã',
+    'ms': 'mới', 'kkk': 'ha ha',
 }
 EMOJI = re.compile(r'[\U0001F000-\U0001FAFF\u2600-\u27ff\ufe0f\u200d]')
 
@@ -41,7 +51,7 @@ _MASKED_TOKEN = re.compile(r'[A-Za-zÀ-ỹĐđ][A-Za-zÀ-ỹĐđ*•]*[*•][A-Z
 # prefers them over their single-word parts.
 PROFANITY = (
     'địt mẹ', 'đụ má', 'vãi lồn', 'vãi cặc', 'con đĩ',
-    'địt', 'đụ', 'đéo', 'đĩ', 'đị', 'cặc', 'lồn', 'buồi', 'đcm', 'đmm',
+    'địt', 'đụ', 'đéo', 'đĩ', 'đị', 'cặc', 'lồn', 'buồi', 'đcm', 'đmm', 'đm',
     'fucking', 'fuck', 'shit', 'bitch',
 )
 _PROFANITY_RE = re.compile(
@@ -84,7 +94,7 @@ def _number_rules(text):
 
 def expand_speech(text):
     text = EMOJI.sub('', text or '')
-    for junk in ('=))', ':))', ':)', '^^', '~~', '...'):
+    for junk in ('=))', ':))', ':)', ':v', '^^', '~~', '...'):
         text = text.replace(junk, '.' if junk == '...' else ' ')
     text = _number_rules(text)
     text = _unmask(text)
