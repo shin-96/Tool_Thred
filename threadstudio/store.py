@@ -84,6 +84,19 @@ class Store:
         self.execute('INSERT OR IGNORE INTO videos(id,job_id,title,path,caption,duration,width,height,thumbnail,created) VALUES(?,?,?,?,?,?,?,?,?,?)',(vid,job_id,title,path,meta.get('caption',title),meta.get('duration',0),meta.get('width',0),meta.get('height',0),meta.get('thumbnail',''),now()))
         return self.rows('SELECT id FROM videos WHERE path=?',(path,))[0]['id']
 
+    def delete_job(self,jid):
+        rows=self.rows('SELECT * FROM jobs WHERE id=?',(jid,))
+        if not rows:return None
+        self.execute('DELETE FROM logs WHERE job_id=?',(jid,))
+        self.execute('DELETE FROM jobs WHERE id=?',(jid,))
+        output=rows[0]['output']
+        # Remove a partial/orphaned output file, but never a file a library
+        # video points at — finished videos survive their job being deleted.
+        if output and not self.rows('SELECT id FROM videos WHERE path=?',(str(Path(output).resolve()),)):
+            try:Path(output).unlink(missing_ok=True)
+            except Exception:pass
+        return rows[0]
+
     def delete_video(self,vid):
         rows=self.rows('SELECT * FROM videos WHERE id=?',(vid,))
         if not rows:return None

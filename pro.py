@@ -293,6 +293,8 @@ class Workspace(ctk.CTk):
         row=ctk.CTkFrame(tab,fg_color='transparent');row.pack(fill='x',padx=10)
         self.button(row,'▶ Bắt đầu chạy',lambda:(self.queue.start(),self.refresh()),width=160);self.button(row,'Tạm dừng nhận việc',lambda:(self.queue.pause(),self.refresh()),width=175)
         self.button(row,'Hủy mục chọn',self.cancel_jobs,width=120);self.button(row,'Thử lại mục lỗi',self.retry_jobs,width=130);self.button(row,'Sửa tác vụ',self.edit_job,width=115);self.button(row,'Mở thư mục',self.open_job_folder,width=120)
+        row2=ctk.CTkFrame(tab,fg_color='transparent');row2.pack(fill='x',padx=10,pady=(6,0))
+        self.button(row2,'Xóa mục chọn',self.delete_jobs,width=130);self.button(row2,'Xóa toàn bộ',self.delete_all_jobs,width=120)
         self.queue_label=ctk.CTkLabel(tab,text='',anchor='w');self.queue_label.pack(fill='x',padx=15)
         self.job_tree=table(tab,[('title','Video',230),('status','Trạng thái',120),('progress','Tiến độ',80),('message','Thông tin',480)])
         self.job_tree.bind('<<TreeviewSelect>>',lambda _:self.show_job_logs())
@@ -303,6 +305,25 @@ class Workspace(ctk.CTk):
         self.refresh()
     def retry_jobs(self):
         for jid in self.job_tree.selection():self.store.retry(jid)
+        self.refresh()
+    def delete_jobs(self):
+        selected=self.job_tree.selection()
+        if not selected:messagebox.showinfo('Xóa tác vụ','Chọn ít nhất một tác vụ để xóa.');return
+        jobs=[self.store.job(j) for j in selected];jobs=[j for j in jobs if j]
+        deletable=[j for j in jobs if j['status'] not in ('fetching','rendering')]
+        if not deletable:messagebox.showinfo('Xóa tác vụ','Tác vụ đang chạy không xóa được. Hãy hủy hoặc chờ chạy xong.');return
+        note=f'Xóa vĩnh viễn {len(deletable)} tác vụ khỏi hàng đợi? Video đã vào Thư viện vẫn được giữ nguyên.'
+        if len(deletable)<len(jobs):note+=f' {len(jobs)-len(deletable)} tác vụ đang chạy sẽ được bỏ qua.'
+        if not messagebox.askyesno('Xóa tác vụ',note):return
+        for j in deletable:self.store.delete_job(j['id'])
+        self.refresh()
+    def delete_all_jobs(self):
+        jobs=self.store.jobs();deletable=[j for j in jobs if j['status'] not in ('fetching','rendering')]
+        if not deletable:messagebox.showinfo('Xóa toàn bộ','Không có tác vụ nào để xóa.');return
+        note=f'Xóa vĩnh viễn toàn bộ {len(deletable)} tác vụ trong hàng đợi (đang chờ, đã xong, lỗi, đã hủy)? Video đã vào Thư viện vẫn được giữ nguyên.'
+        if len(deletable)<len(jobs):note+=f' {len(jobs)-len(deletable)} tác vụ đang chạy sẽ được giữ lại.'
+        if not messagebox.askyesno('Xóa toàn bộ',note):return
+        for j in deletable:self.store.delete_job(j['id'])
         self.refresh()
     def edit_job(self):
         selected=self.job_tree.selection()
