@@ -288,7 +288,7 @@ def synthesize_censored(spoken, voice, audio, log, cancel, fallback, voice_api=N
     return label
 
 
-def render(data, output, style='center', background='', music='', voice='ms-MY-YasminNeural', speech=True, speed=175, max_posts=12, resolution=720, log=print, progress=lambda x:None, cancel=None, speech_fallback=True,voice_api=None,edits=None,funny_only=False,music_volume=0.12,voice_volume=1.0,censor_beep=True):
+def render(data, output, style='center', background='', music='', voice='ms-MY-YasminNeural', speech=True, speed=175, max_posts=12, resolution=720, log=print, progress=lambda x:None, cancel=None, speech_fallback=True,voice_api=None,edits=None,funny_only=False,music_volume=0.12,voice_volume=1.0,censor_beep=True,sfx_pop=True):
     if not shutil.which('ffmpeg') or not shutil.which('ffprobe'):
         raise RuntimeError('Cần FFmpeg và ffprobe trong PATH. Chạy CAI_DAT.cmd.')
     if style not in {'center','top','grid'}:raise ValueError('Mẫu không hợp lệ.')
@@ -384,10 +384,29 @@ def render(data, output, style='center', background='', music='', voice='ms-MY-Y
     joined=work/'joined.mp4'
     run(['ffmpeg','-v','error','-y','-f','concat','-safe','0','-i',concat,'-c','copy','-movflags','+faststart',joined],cancel)
     staging=work/'final.mp4'
-    if music:
-        run(['ffmpeg','-v','error','-y','-i',joined,'-stream_loop','-1','-i',music,'-filter_complex',f'[0:a]volume={float(voice_volume):.3f}[v0];[1:a]volume={float(music_volume):.3f}[m];[v0][m]amix=inputs=2:duration=first:normalize=0[a]','-map','0:v','-map','[a]','-c:v','copy','-c:a','aac','-t',str(elapsed),'-movflags','+faststart',staging],cancel)
-    elif float(voice_volume)!=1.0:
-        run(['ffmpeg','-v','error','-y','-i',joined,'-filter_complex',f'[0:a]volume={float(voice_volume):.3f}[a]','-map','0:v','-map','[a]','-c:v','copy','-c:a','aac','-movflags','+faststart',staging],cancel)
+    sfx=None
+    if sfx_pop and len(timeline)>1:
+        # A short synthesized "pop" at every scene change, so each new comment
+        # card lands with the little blip heard in reference Threads videos.
+        pop=work/'pop.wav'
+        run(['ffmpeg','-v','error','-y','-f','lavfi','-i','aevalsrc=0.9*sin(2*PI*(700*t-2600*t*t))*exp(-30*t):d=0.12:s=44100','-ac','1',pop],cancel)
+        starts=[s['start'] for s in timeline[1:]]
+        scmd=['ffmpeg','-v','error','-y']
+        for _ in starts:scmd+=['-i',pop]
+        fc=';'.join(f'[{i}:a]adelay={int(t*1000)}[d{i}]' for i,t in enumerate(starts))
+        fc+=';'+''.join(f'[d{i}]' for i in range(len(starts)))+f'amix=inputs={len(starts)}:duration=longest:normalize=0[sfx]'
+        sfx=work/'sfx.wav';scmd+=['-filter_complex',fc,'-map','[sfx]','-ar','44100','-ac','2',sfx]
+        run(scmd,cancel)
+    if music or sfx is not None or float(voice_volume)!=1.0:
+        cmd=['ffmpeg','-v','error','-y','-i',joined]
+        if music:cmd+=['-stream_loop','-1','-i',music]
+        if sfx is not None:cmd+=['-i',sfx]
+        fc=[f'[0:a]volume={float(voice_volume):.3f}[v0]'];labels=['[v0]'];nxt=1
+        if music:fc.append(f'[{nxt}:a]volume={float(music_volume):.3f}[m]');labels.append('[m]');nxt+=1
+        if sfx is not None:fc.append(f'[{nxt}:a]volume=0.9[s]');labels.append('[s]')
+        fc.append(''.join(labels)+f'amix=inputs={len(labels)}:duration=first:normalize=0[a]' if len(labels)>1 else '[v0]anull[a]')
+        cmd+=['-filter_complex',';'.join(fc),'-map','0:v','-map','[a]','-c:v','copy','-c:a','aac','-t',str(elapsed),'-movflags','+faststart',staging]
+        run(cmd,cancel)
     else:shutil.copy2(joined,staging)
     if edits:
         from .editing import edit_video,normalize
