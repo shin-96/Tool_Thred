@@ -251,10 +251,23 @@ def fetch_thread(url, log=print, limit=30, cancel=None):
                     ep.on('response', _cap2)
                     ep.goto(url.rstrip('/') + '/embed', wait_until='domcontentloaded', timeout=30000)
                     ep.wait_for_timeout(3500)
+                    vsrc = ep.evaluate("() => { const v = document.querySelector('video'); return v ? (v.currentSrc || v.getAttribute('src') || '') : ''; }")
+                    if vsrc.startswith('http') and not vsrc.startswith('blob:'):
+                        embed_hits.insert(0, vsrc)  # the embed page's native player points at the plain file
+                    else:
+                        ep.evaluate("() => { const v = document.querySelector('video'); if (v) { v.load(); v.play().catch(() => {}); } }")
+                        ep.wait_for_timeout(2000)
+                        vsrc = ep.evaluate("() => { const v = document.querySelector('video'); return v ? (v.currentSrc || v.getAttribute('src') || '') : ''; }")
+                        if vsrc.startswith('http') and not vsrc.startswith('blob:'):
+                            embed_hits.insert(0, vsrc)
                     perf2 = ep.evaluate("() => performance.getEntriesByType('resource').map(e => e.name).filter(u => u.includes('.mp4'))")
                     for u in perf2:
                         if u not in embed_hits:embed_hits.append(u)
-                    if embed_hits:primary['media'] = {'type': 'video', 'url': embed_hits[0]}
+                    if embed_hits:
+                        primary['media'] = {'type': 'video', 'url': embed_hits[0]}
+                        log('Đã lấy được file video thật từ trang nhúng của bài.')
+                    else:
+                        log('Trang nhúng cũng không cho file video — bài này sẽ dùng ảnh bìa của video.')
                     ep.close()
                 except Exception:
                     pass
