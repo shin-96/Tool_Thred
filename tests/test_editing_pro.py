@@ -5,7 +5,7 @@ from pathlib import Path
 from PIL import Image
 
 from threadstudio.render import run, probe
-from threadstudio.editing import media_info, normalize, keyframe_state, chroma_key, edit_video, preview_frame
+from threadstudio.editing import media_info, mix_preview_audio, normalize, keyframe_state, chroma_key, edit_video, preview_frame
 
 
 class ProEditingTests(unittest.TestCase):
@@ -26,6 +26,13 @@ class ProEditingTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.tmp.cleanup()
+
+    def test_preview_audio_mix_places_track(self):
+        out = self.root / 'preview_mix.wav'
+        ok = mix_preview_audio(self.source, [{'path': str(self.music), 'mode': 'audio', 'start': 1,
+                                              'duration': 2, 'volume': 1, 'fade_in': 0, 'fade_out': 0}], out)
+        self.assertTrue(ok); self.assertTrue(out.exists())
+        self.assertAlmostEqual(float(probe(out)['format']['duration']), 3, delta=0.2)
 
     def test_audio_media_info_and_mode(self):
         info = media_info(self.music)

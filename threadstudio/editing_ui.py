@@ -1,6 +1,10 @@
 import hashlib
 import json
 import shutil
+import subprocess
+import sys
+import tempfile
+import threading
 import time
 import tkinter as tk
 from pathlib import Path
@@ -10,7 +14,7 @@ import customtkinter as ctk
 from PIL import ImageDraw
 
 from .render import ROOT, probe
-from .editing import media_info, preview_frame, normalize, scene_timeline, keyframe_state
+from .editing import media_info, mix_preview_audio, preview_frame, normalize, scene_timeline, keyframe_state
 
 MEDIA_TYPES = [('Ảnh, meme, video và âm thanh', '*.png *.jpg *.jpeg *.webp *.bmp *.gif *.mp4 *.mov *.mkv *.webm *.mp3 *.wav *.m4a *.aac *.ogg *.flac')]
 
@@ -18,7 +22,8 @@ MEDIA_TYPES = [('Ảnh, meme, video và âm thanh', '*.png *.jpg *.jpeg *.webp *
 class EditingPanel:
     def __init__(self, app, tab):
         self.app = app; self.items = []; self.selected = None; self.source = None; self.preview_busy = False
-        self.playhead = 0.0; self._playing = False; self._drag = None; self._pv_size = (240, 280)
+        self.playhead = 0.0; self._playing = False; self._drag = None; self._pv_size = (360, 540)
+        self._au_proc = None; self._au_key = None
         app.heading(tab, 'Chèn meme, ảnh, video và âm thanh',
                     'Timeline bên dưới: bấm để tua, kéo khối để đổi thời điểm, bấm khối để chọn lớp. Trên khung xem trước: kéo để di chuyển lớp, lăn chuột để đổi kích thước. Thời gian tính bằng giây; vị trí dựa trên khung 720 × 1280.')
         bottom = ctk.CTkFrame(tab); bottom.pack(side='bottom', fill='x', padx=8, pady=6)
@@ -82,11 +87,11 @@ class EditingPanel:
         self.summary = ctk.CTkLabel(form, text='Chưa có media', anchor='w', justify='left', wraplength=550); self.summary.pack(fill='x', padx=12, pady=8)
         ctk.CTkButton(right, text='Dùng video chọn trong Thư viện', command=self.use_selected).pack(fill='x', padx=10, pady=10)
         self.source_label = ctk.CTkLabel(right, text='Chưa chọn video nguồn', wraplength=300); self.source_label.pack(fill='x', padx=10)
-        self.preview_height = max(140, min(280, app.winfo_screenheight() - 620))
+        self.preview_height = max(240, min(540, app.winfo_screenheight() - 430))
         self.preview = ctk.CTkLabel(right, text='Xem trước ở thời điểm bên dưới', height=self.preview_height); self.preview.pack(fill='x', padx=10, pady=8)
         self.preview.bind('<Button-1>', self.pv_down); self.preview.bind('<B1-Motion>', self.pv_move)
         self.preview.bind('<ButtonRelease-1>', lambda e: self.show_preview()); self.preview.bind('<MouseWheel>', self.pv_wheel)
-        ctk.CTkLabel(right, text='Bấm ▶ Phát / Dừng (ở thanh timeline) để xem video chạy; kéo vạch đỏ trên timeline tới đúng đoạn cần chèn, rồi ghi keyframe.', wraplength=300, justify='left', text_color='#9eb8ac').pack(fill='x', padx=10)
+        ctk.CTkLabel(right, text='Bấm ▶ Phát / Dừng (ở thanh timeline) để xem video chạy CÓ TIẾNG (tiếng gốc + nhạc/clip đã chèn); kéo vạch đỏ trên timeline tới đúng đoạn cần chèn, rồi ghi keyframe.', wraplength=300, justify='left', text_color='#9eb8ac').pack(fill='x', padx=10)
         self.seek = ctk.CTkEntry(right, placeholder_text='Thời điểm xem trước'); self.seek.insert(0, '0'); self.seek.pack(fill='x', padx=10, pady=4)
         ctk.CTkButton(right, text='Cập nhật xem trước', command=self.show_preview).pack(fill='x', padx=10, pady=4)
         ctk.CTkButton(right, text='XUẤT BẢN CHỈNH SỬA', command=self.export).pack(fill='x', padx=10, pady=8)
@@ -198,16 +203,64 @@ class EditingPanel:
     def toggle_play(self):
         self._playing = not self._playing
         if self._playing:
-            self._play_clock = time.monotonic(); self._play_from = self.playhead; self._tick()
+            self._play_clock = time.monotonic(); self._play_from = self.playhead; self._start_audio(); self._tick()
+        else:
+            self._stop_audio()
 
     def _tick(self):
         if not self._playing:
             return
         t = self._play_from + (time.monotonic() - self._play_clock)
         if t >= self._total():
-            self._playing = False; return
+            self._playing = False; self._stop_audio(); return
         self._set_playhead(t)
         self.timeline.after(120, self._tick)
+
+    # ---------- preview audio ----------
+    def _start_audio(self):
+        if not self.source:
+            return
+        self._stop_audio()
+        source_path = self.source['path']; start = self.playhead
+        key = (source_path, tuple((i.get('path'), i.get('start'), i.get('duration'), i.get('volume'),
+                                    i.get('fade_in'), i.get('fade_out'), i.get('mode'), i.get('audio')) for i in self.items))
+
+        def work():
+            try:
+                mix = Path(tempfile.gettempdir()) / 'toolthred_preview_mix.wav'
+                if self._au_key != key or not mix.exists():
+                    if not mix_preview_audio(source_path, self.items, mix):
+                        return
+                    self._au_key = key
+                seg = Path(tempfile.gettempdir()) / 'toolthred_preview_seg.wav'
+                subprocess.run(['ffmpeg', '-v', 'error', '-y', '-ss', str(start), '-i', str(mix), '-c', 'copy', str(seg)],
+                               check=True, capture_output=True)
+                if not self._playing:
+                    return
+                if sys.platform == 'win32':
+                    import winsound
+                    winsound.PlaySound(str(seg), winsound.SND_FILENAME | winsound.SND_ASYNC)
+                elif shutil.which('ffplay'):
+                    self._au_proc = subprocess.Popen(['ffplay', '-nodisp', '-autoexit', '-v', 'error', str(seg)],
+                                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def _stop_audio(self):
+        if sys.platform == 'win32':
+            try:
+                import winsound
+                winsound.PlaySound(None, winsound.SND_PURGE)
+            except Exception:
+                pass
+        if self._au_proc:
+            try:
+                self._au_proc.kill()
+            except Exception:
+                pass
+            self._au_proc = None
 
     # ---------- preview drag / resize ----------
     def _pv_to_video(self, event):
@@ -410,6 +463,7 @@ class EditingPanel:
         records = self.app.selected_records()
         if len(records) != 1:
             messagebox.showinfo('Chọn video', 'Chọn đúng một video ở Thư viện rồi quay lại đây.'); return
+        self._playing = False; self._stop_audio()
         self.source = records[0]; info = probe(self.source['path'])
         self.source_label.configure(text=self.source['title'] + '\n' + f"{float(info['format']['duration']):.1f}s · {len(scene_timeline(self.source['path']))} cảnh")
         self._set_playhead(0)
@@ -438,7 +492,7 @@ class EditingPanel:
                     d = ImageDraw.Draw(im)
                     d.rectangle([st['x'], st['y'], st['x'] + st['width'], st['y'] + h], outline=(255, 209, 102), width=4)
                     d.rectangle([st['x'] + st['width'] - 14, st['y'] + h - 14, st['x'] + st['width'] + 2, st['y'] + h + 2], fill=(255, 209, 102))
-                im.thumbnail((240, self.preview_height)); self._pv_size = im.size
+                im.thumbnail((360, self.preview_height)); self._pv_size = im.size
                 self.app.events.put(('media_preview', (im, total)))
                 # Update the label directly: the app's event poll runs only 1x/sec, which made playback look frozen.
                 def apply_img(im=im):

@@ -254,6 +254,32 @@ def edit_video(source,output,items,log=print,progress=lambda _:None,cancel=None,
     progress(1);log('Đã xuất bản chỉnh sửa: '+str(output));return output
 
 
+def mix_preview_audio(source,items,output):
+    """Audio-only mix for editor preview playback: base sound + audio tracks + clip sound.
+    Insert time-shifts are not applied (the inserted clip's sound plays at its start point
+    over the base), which is close enough to judge how an edit sounds. Returns False when
+    there is nothing audible."""
+    from .render import probe, run
+    info=probe(source);total=float(info['format'].get('duration',0));edits,_=normalize(items,total)
+    cmd=['ffmpeg','-v','error','-y','-i',str(source)];filters=[];labels=[]
+    if any(s['codec_type']=='audio' for s in info['streams']):
+        filters.append('[0:a]aresample=44100[a0]');labels.append('[a0]')
+    idx=0
+    for e in edits:
+        audible=e['mode']=='audio' or (e['audio'] and e['info'].get('audio'))
+        if not audible:continue
+        idx+=1;cmd+=['-stream_loop','-1','-ss',str(e['offset']),'-i',e['path']]
+        chain=f'[{idx}:a]atrim=duration={e["duration"]},asetpts=PTS-STARTPTS,aresample=44100,volume={e["volume"]}'
+        if e['mode']=='audio':
+            if e['fade_in']>0:chain+=f',afade=t=in:st=0:d={e["fade_in"]}'
+            if e['fade_out']>0:chain+=f',afade=t=out:st={max(0,e["duration"]-e["fade_out"])}:d={e["fade_out"]}'
+        filters.append(chain+f',adelay={int(e["start"]*1000)}:all=1[au{idx}]');labels.append(f'[au{idx}]')
+    if not labels:return False
+    filters.append(''.join(labels)+f'amix=inputs={len(labels)}:duration=first:normalize=0,alimiter=limit=0.95[a]')
+    cmd+=['-filter_complex',';'.join(filters),'-map','[a]','-t',str(total),'-ar','44100','-ac','2',str(output)]
+    run(cmd);return True
+
+
 def _frame(path,t,width,height,fit=False):
     import cv2
     path=Path(path)
