@@ -314,6 +314,9 @@ def render(data, output, style='center', background='', music='', voice='ms-MY-Y
         if s.get('media') and s['media'][0]=='video':
             try:run(['ffmpeg','-v','error','-stream_loop','-1','-i',s['media'][1],'-t','0.5','-f','null','-'],cancel)
             except Exception:log(f'Cảnh {i+1}: file video đính kèm không đọc được, dùng nền thường.');s={**s,'media':None,'media_box':None}
+        if s.get('media') and s['media'][0]!='video':
+            try:run(['ffmpeg','-v','error','-loop','1','-framerate','30','-i',s['media'][1],'-t','0.3','-f','null','-'],cancel)
+            except Exception:log(f'Cảnh {i+1}: file ảnh đính kèm không đọc được, dùng nền thường.');s={**s,'media':None,'media_box':None}
         out=work/f'segment_{i:03}.mp4';cmd=['ffmpeg','-hide_banner','-loglevel','error','-y']
         if style=='grid':
             cmd+=['-loop','1','-framerate','30','-i',png]

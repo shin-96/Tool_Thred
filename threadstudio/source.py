@@ -104,7 +104,10 @@ def attach_media(data, log=print):
                 post.pop('media', None)
                 continue
         try:
-            has_video = any(st.get('codec_type') == 'video' and st.get('codec_name') not in {'png', 'mjpeg', 'bmp', 'webp', 'gif', 'tiff'} for st in probe(target).get('streams', []))  # ffprobe reports still images as video streams too
+            streams = probe(target).get('streams', [])
+            has_video = any(st.get('codec_type') == 'video' and st.get('codec_name') not in {'png', 'mjpeg', 'bmp', 'webp', 'gif', 'tiff'} for st in streams)  # ffprobe reports still images as video streams too
+            if any(st.get('codec_name') == 'gif' for st in streams):
+                has_video = True  # a GIF is animation: normalize it like a video below — the renderer cannot -loop a gif file ('Option loop not found')
         except Exception:
             has_video = media.get('type') == 'video'
         if media.get('type') == 'video' and not has_video:
