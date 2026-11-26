@@ -43,7 +43,7 @@ EXTRACT = r"""() => {
    if(sc){const sv=sc.querySelector('video');if(sv){scoped_src=sv.currentSrc||sv.getAttribute('src')||(sv.querySelector('source')?sv.querySelector('source').getAttribute('src'):'')||'';scoped_poster=sv.getAttribute('poster')||'';}}}
   if(!media && !vid && !scoped_src){
    let sc=a;while(sc){const links=new Set(Array.from(sc.querySelectorAll('a[href*="/post/"]')).map(x=>canonical(x.getAttribute('href'))));if(links.size>1){sc=null;break;}if(sc.querySelector('[data-pressable-container]') && sc!==a)break;sc=sc.parentElement;}
-   if(sc){const iw=im=>Math.max(im.naturalWidth||0,im.clientWidth||0);const cands=Array.from(sc.querySelectorAll('img')).filter(im=>{if(iw(im)<320)return false;const la=im.closest('a');const lh=la?la.getAttribute('href')||'':'';if(/^\/@[^/]+\/?$/.test(lh))return false;const m=lh.match(/\/post\/([\w-]+)/);return !m || m[1]===pid;}).sort((x,y)=>iw(y)-iw(x));
+   if(sc){const iw=im=>Math.max(im.naturalWidth||0,im.clientWidth||0);const cands=Array.from(sc.querySelectorAll('img')).filter(im=>{if(iw(im)<320)return false;if(im.closest('[data-pressable-container]'))return false;const la=im.closest('a');const lh=la?la.getAttribute('href')||'':'';if(/^\/@[^/]+\/?$/.test(lh))return false;const m=lh.match(/\/post\/([\w-]+)/);return !m || m[1]===pid;}).sort((x,y)=>iw(y)-iw(x));
     if(cands.length)media={type:'image',url:cands[0].src};}
   }
   result.push({username:user,text, url:new URL(href,location.origin).href,date:a.innerText,avatar:img?.src||'',verified:!!el.querySelector('[aria-label="Verified"],svg[title="Verified"]'),stats:buttons.filter(x=>/^(Like|Comment|Repost|Share)/.test(x)),media,has_video:!!(vid||scoped_src||scoped_poster),scoped_src,scoped_poster});
